@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@hcl/server": "workspace:*",
+    "@hcl/contracts": "workspace:*",
     "pg": "8.23.1",
     "drizzle-orm": "0.45.4",
     "pg-boss": "12.38.1",

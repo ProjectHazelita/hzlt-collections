@@ -235,6 +235,10 @@ importers:
       typebox:
         specifier: 1.4.5
         version: 1.4.5
+    devDependencies:
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@24.19.2)
 
   apps/web:
     dependencies:
@@ -275,6 +279,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@hcl/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@hcl/server':
         specifier: workspace:*
         version: link:../../packages/server

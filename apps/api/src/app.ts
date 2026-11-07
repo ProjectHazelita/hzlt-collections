@@ -1,10 +1,11 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
-import { HealthResponseSchema } from '@hcl/contracts';
+import { HealthResponseSchema, UploadRequestBodyDocumentation } from '@hcl/contracts';
 import { DomainError, sql, type Config, type Database, type createQueue, type LocalStorage } from '@hcl/server';
 import { installAuth } from './auth.js';
 import { installErrors } from './errors.js';
 import { installEntries } from './entries.js';
+import { installUploads } from './uploads.js';
 
 export async function buildApp({ db, boss, storage, config, serveWeb = false }: {
   db: Database;
@@ -29,11 +30,18 @@ export async function buildApp({ db, boss, storage, config, serveWeb = false }: 
   });
   await installAuth(app, { db, config });
   await installEntries(app, { db, boss });
+  await installUploads(app, { db, boss, storage, config });
   app.get('/api/v1/health', { schema: { response: { 200: HealthResponseSchema } } }, async () => {
     await db.execute(sql`select 1`);
     if (!await boss.getQueue('asset-process')) throw new DomainError(503, 'INTERNAL_ERROR', 'Service unavailable.');
     return { status: 'ok' };
   });
-  app.get('/api/v1/openapi.json', async () => app.swagger());
+  app.get('/api/v1/openapi.json', async () => {
+    const document = app.swagger();
+    if (!('openapi' in document)) throw new Error('OpenAPI generation returned an unsupported document');
+    const operation = document.paths?.['/api/v1/uploads']?.post;
+    if (operation) operation.requestBody = UploadRequestBodyDocumentation;
+    return document;
+  });
   return app;
 }

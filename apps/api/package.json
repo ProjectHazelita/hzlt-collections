@@ -25,6 +25,9 @@
     "@fastify/swagger": "9.9.3",
     "@fastify/rate-limit": "11.2.2"
   },
+  "devDependencies": {
+    "sharp": "0.35.5"
+  },
   "version": "0.1.0-dev.0",
   "private": true,
   "type": "module"

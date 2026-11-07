@@ -1,6 +1,10 @@
 {
   "name": "@hcl/server",
-  "exports": "./src/index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./media": "./src/assets/media.ts"
+  },
   "scripts": {
     "typecheck": "tsc"
   },
