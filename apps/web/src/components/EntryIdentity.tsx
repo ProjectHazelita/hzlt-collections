@@ -1,6 +1,13 @@
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
-export function EntryIdentity({ id }: { id: string }) {
+
+export function EntryIdentity({
+  id,
+  variant = 'detail',
+}: {
+  id: string;
+  variant?: 'card' | 'detail';
+}) {
   const [copied, setCopied] = useState(false);
   const [fallback, setFallback] = useState(false);
   const url = new URL(`/entries/${id}`, location.origin).href;
@@ -31,19 +38,20 @@ export function EntryIdentity({ id }: { id: string }) {
     setCopied(success);
     if (success) window.setTimeout(() => setCopied(false), 2000);
   }
+  const card = variant === 'card';
   return (
-    <span className="entry-identity">
-      <span>#{id}</span>
+    <span className={card ? 'entry-identity entry-identity-card' : 'entry-identity'}>
+      {!card && <span className="entry-number">#{id}</span>}
       <button
         type="button"
-        className="icon-button"
+        className="entry-copy"
         aria-label={copied ? '链接已复制' : '复制条目链接'}
         title="复制条目链接"
         onClick={() => void copy()}
       >
-        {copied ? <Check size={16} /> : <Copy size={16} />}
+        {copied ? <Check size={card ? 16 : 14} /> : <Copy size={card ? 16 : 14} />}
+        {!card && <span>{copied ? '链接已复制' : '复制条目链接'}</span>}
       </button>
-      {copied && <span role="status">链接已复制</span>}
       {fallback && (
         <input
           aria-label="条目链接，复制失败请手动复制"

@@ -21,7 +21,7 @@ function AuthFields({ kind }: { kind: Kind }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [fields, setFields] = useState<FieldErrors>({});
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ title: string; note?: string } | null>(null);
   const [needsSession, setNeedsSession] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const active = useRef(true);
@@ -72,15 +72,14 @@ function AuthFields({ kind }: { kind: Kind }) {
         return;
       failureEpoch = auth.epoch.current;
       if (cause instanceof ApiError && cause.code === 'USERNAME_TAKEN') {
-        setFields({ username: '这个用户名已被使用，请换一个。' });
-        setFailure('这个用户名已被使用。');
+        setFailure({ title: '这个用户名已被使用', note: '请换一个用户名，再试一次。' });
       } else if (
         rejectedCredentials ||
         (cause instanceof ApiError && cause.code === 'INVALID_CREDENTIALS')
       ) {
-        setFailure('用户名或密码不正确，请检查后重试。');
+        setFailure({ title: '用户名或密码不正确', note: '请检查后重试。' });
       } else {
-        setFailure(errorMessage(cause));
+        setFailure({ title: errorMessage(cause) });
       }
       if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403))
         setNeedsSession(true);
@@ -99,7 +98,7 @@ function AuthFields({ kind }: { kind: Kind }) {
           <br />
           留在同一个地方。
         </p>
-        <p className="muted">
+        <p className="auth-description">
           一个属于社群的内容分享空间。
           <br />
           无需登录也可以浏览，注册后即可发布和喜欢。
@@ -131,12 +130,10 @@ function AuthFields({ kind }: { kind: Kind }) {
             value={username}
             disabled={submitting}
             onChange={(event) => setUsername(event.target.value)}
+            placeholder="输入用户名"
             aria-invalid={Boolean(fields.username)}
-            aria-describedby={`${id}-username-hint${fields.username ? ` ${id}-username-error` : ''}`}
+            aria-describedby={fields.username ? `${id}-username-error` : undefined}
           />
-          <small className="muted" id={`${id}-username-hint`}>
-            3–32 个字母、数字、下划线或短横线
-          </small>
           {fields.username && (
             <small className="error" id={`${id}-username-error`}>
               {fields.username}
@@ -154,12 +151,10 @@ function AuthFields({ kind }: { kind: Kind }) {
             value={password}
             disabled={submitting}
             onChange={(event) => setPassword(event.target.value)}
+            placeholder="输入密码"
             aria-invalid={Boolean(fields.password)}
-            aria-describedby={`${id}-password-hint${fields.password ? ` ${id}-password-error` : ''}`}
+            aria-describedby={fields.password ? `${id}-password-error` : undefined}
           />
-          <small className="muted" id={`${id}-password-hint`}>
-            12–128 个字符，保留输入的空格
-          </small>
           {fields.password && (
             <small className="error" id={`${id}-password-error`}>
               {fields.password}
@@ -178,10 +173,11 @@ function AuthFields({ kind }: { kind: Kind }) {
               value={confirmation}
               disabled={submitting}
               onChange={(event) => setConfirmation(event.target.value)}
+              placeholder="再次输入密码"
               aria-invalid={Boolean(fields.confirmation)}
               aria-describedby={`${id}-confirmation-hint${fields.confirmation ? ` ${id}-confirmation-error` : ''}`}
             />
-            <small className="muted" id={`${id}-confirmation-hint`}>
+            <small className="auth-hint" id={`${id}-confirmation-hint`}>
               使用较长且不重复的密码。
             </small>
             {fields.confirmation && (
@@ -197,8 +193,9 @@ function AuthFields({ kind }: { kind: Kind }) {
           </p>
         )}
         {Boolean(failure || auth.error) && (
-          <div role="alert" className="auth-notice error">
-            {failure || errorMessage(auth.error)}
+          <div role="alert" className="auth-notice">
+            <p className="auth-notice-title">{failure?.title ?? errorMessage(auth.error)}</p>
+            {failure?.note && <p className="auth-notice-note">{failure.note}</p>}
           </div>
         )}
         {Boolean(auth.error || needsSession) && (

@@ -43,10 +43,12 @@ function TagInput({
   const [error, setError] = useState('');
   const [suggestionError, setSuggestionError] = useState('');
   const [retry, setRetry] = useState(0);
-  const [focused, setFocused] = useState(false);
+  const [open, setOpen] = useState(false);
+  const field = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: The retry counter deliberately reissues failed tag requests.
   useEffect(() => {
-    if (!focused || disabled) return;
+    if (!open || disabled) return;
     const controller = new AbortController();
     const captured = epoch.current;
     setSuggestionError('');
@@ -67,7 +69,16 @@ function TagInput({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [value, focused, disabled, request, epoch, retry]);
+  }, [value, open, disabled, request, epoch, retry]);
+  useEffect(() => {
+    if (!open) return;
+    input.current?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!field.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [open]);
   function add(raw: string) {
     const name = raw.trim();
     const normalized = tagKey(name);
@@ -88,10 +99,10 @@ function TagInput({
     setError('');
   }
   return (
-    <div className="composer-field">
-      <label htmlFor="composer-tag">
-        标签 <span className="muted">{tags.length}/10</span>
-      </label>
+    <div className="composer-field composer-tag-field" ref={field}>
+      <div className="composer-label">
+        <span>标签</span>
+      </div>
       <div className="composer-tags">
         {tags.map((tag) => (
           <span className="composer-tag" key={tagKey(tag)}>
@@ -109,14 +120,31 @@ function TagInput({
             </button>
           </span>
         ))}
-        <div className="composer-tag-entry">
+        <button
+          className="composer-add-tag"
+          type="button"
+          disabled={disabled || tags.length >= 10}
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Plus size={14} aria-hidden="true" />
+          添加标签
+        </button>
+      </div>
+      <small className="composer-hint">输入标签后按回车添加</small>
+      {error && (
+        <small role="alert" className="error">
+          {error}
+        </small>
+      )}
+      {open && !disabled && (
+        <div className="composer-tag-picker">
           <input
-            id="composer-tag"
+            ref={input}
             value={value}
-            disabled={disabled || tags.length >= 10}
+            aria-label="标签名称"
+            placeholder="输入标签名称…"
             autoComplete="off"
-            aria-describedby="composer-tag-help"
-            onFocus={() => setFocused(true)}
             onChange={(event) => {
               setValue(event.target.value);
               setError('');
@@ -126,45 +154,37 @@ function TagInput({
                 event.preventDefault();
                 add(value);
               }
-              if (event.key === 'Escape') setFocused(false);
+              if (event.key === 'Escape') setOpen(false);
             }}
           />
+          {tags.length > 0 && <p className="composer-hint">已选择：{tags.join('、')}</p>}
+          <div className="composer-suggestions">
+            {suggestions
+              .filter((tag) => !tags.some((selected) => tagKey(selected) === tagKey(tag)))
+              .map((tag) => (
+                <button
+                  type="button"
+                  className="composer-suggestion"
+                  key={tag}
+                  onClick={() => add(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            {suggestionError && (
+              <div className="error" role="alert">
+                标签建议：{suggestionError}{' '}
+                <button type="button" onClick={() => setRetry(retry + 1)}>
+                  重试
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="button"
-            disabled={disabled || !value.trim() || tags.length >= 10}
-            onClick={() => add(value)}
-            aria-label="添加标签"
+            className="composer-tag-done secondary"
+            onClick={() => setOpen(false)}
           >
-            <Plus size={16} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      <small id="composer-tag-help" className="muted">
-        输入标签后按回车或点击加号添加，每个最多 32 字符。
-      </small>
-      {error && (
-        <small role="alert" className="error">
-          {error}
-        </small>
-      )}
-      {focused && !disabled && (
-        <div className="composer-suggestions">
-          {suggestions
-            .filter((tag) => !tags.some((selected) => tagKey(selected) === tagKey(tag)))
-            .map((tag) => (
-              <button type="button" className="secondary" key={tag} onClick={() => add(tag)}>
-                {tag}
-              </button>
-            ))}
-          {suggestionError && (
-            <div className="error" role="alert">
-              标签建议：{suggestionError}{' '}
-              <button type="button" onClick={() => setRetry(retry + 1)}>
-                重试
-              </button>
-            </div>
-          )}
-          <button type="button" className="composer-tag-done" onClick={() => setFocused(false)}>
             完成
           </button>
         </div>
@@ -195,7 +215,6 @@ function ComposerForm({ id }: { id: string | undefined }) {
   const [upload, setUpload] = useState<UploadStatus | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [uploadRetry, setUploadRetry] = useState(0);
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -248,7 +267,6 @@ function ComposerForm({ id }: { id: string | undefined }) {
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [selection]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: uploadRetry deliberately restarts processing of the selected file.
   useEffect(() => {
     if (!selection) return;
     const controller = new AbortController();
@@ -308,7 +326,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [selection, uploadRetry, request, epoch]);
+  }, [selection, request, epoch]);
 
   function changed() {
     submitIdentity.current = null;
@@ -415,40 +433,65 @@ function ComposerForm({ id }: { id: string | undefined }) {
       </section>
     );
   const image = entry?.asset?.originalUrl ?? preview;
+  const status = id
+    ? entry?.asset
+      ? '已发布图片暂不支持替换'
+      : '纯文字条目'
+    : uploading
+      ? '正在上传并校验图片…'
+      : uploadError
+        ? '上传失败'
+        : selection
+          ? '已选 1 张图片 · 可移除'
+          : '未添加图片（可选）';
+  const fileNote = entry?.asset
+    ? `${entry.asset.width} × ${entry.asset.height} px · ${entry.asset.format.toUpperCase()}`
+    : upload?.width && upload.height
+      ? `${upload.width} × ${upload.height} px`
+      : '公开发布';
   return (
     <section className="composer-page">
       <form className="composer-workspace" onSubmit={submit}>
         <header className="composer-header">
-          <div>
-            <Link to={id ? `/entries/${id}` : '/'} aria-label="返回" className="composer-back">
+          <div className="composer-heading">
+            <Link to={id ? `/entries/${id}` : '/'} className="composer-back" aria-label="返回">
               <ArrowLeft size={20} />
             </Link>
-            <h1 className="page-heading">{id ? '编辑条目' : '发布条目'}</h1>
+            <h1>{id ? '编辑条目' : '发布条目'}</h1>
           </div>
-          <button className="primary" type="submit" disabled={!valid || saving}>
-            {saving ? '正在保存…' : id ? '保存修改' : '发布条目'}
+          <button className="primary composer-publish" type="submit" disabled={!valid || saving}>
+            {saving ? '正在保存…' : id ? '保存修改' : '发布'}
           </button>
         </header>
         {submitError && (
-          <div role="alert" className="error">
-            {submitError}
+          <div role="alert" className="composer-error">
+            <p>{submitError}</p>
             {Object.entries(fields).map(([field, message]) => (
-              <p key={field}>
-                {field}：{message}
-              </p>
+              <p key={field}>{message}</p>
             ))}
           </div>
         )}
         <div className="composer-layout">
-          <section className="composer-preview" aria-label="条目预览">
-            <div className="composer-preview-toolbar">
-              <span>{hasImage ? (id ? '已发布图片' : '已选 1 张图片') : '纯文字条目'}</span>
+          <section
+            className="composer-preview"
+            aria-label="条目预览"
+            onDragOver={(event) => {
+              if (!id) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              if (id) return;
+              event.preventDefault();
+              choose(event.dataTransfer.files?.[0]);
+            }}
+          >
+            <div className="composer-status">
+              <span>{status}</span>
               {!id && (
-                <div>
+                <div className="composer-status-actions">
                   {selection && (
                     <button
                       type="button"
-                      className="secondary"
+                      className="composer-small"
                       disabled={saving}
                       onClick={removeImage}
                     >
@@ -457,12 +500,12 @@ function ComposerForm({ id }: { id: string | undefined }) {
                   )}
                   <button
                     type="button"
-                    className="secondary"
+                    className="composer-small"
                     disabled={saving}
                     onClick={() => inputRef.current?.click()}
                   >
                     <ImagePlus size={16} aria-hidden="true" />
-                    {selection ? '更换图片' : '添加图片'}
+                    {selection ? '更换图片' : '选择图片'}
                   </button>
                 </div>
               )}
@@ -481,7 +524,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
                 }}
               />
             )}
-            {image ? (
+            {image && !uploadError ? (
               <div className="composer-image">
                 <img src={image} alt={title.trim() || '所选图片预览'} />
                 <div className="composer-badges">
@@ -489,77 +532,66 @@ function ComposerForm({ id }: { id: string | undefined }) {
                   {aiGenerated && <span>AI 生成</span>}
                 </div>
               </div>
-            ) : (
-              <div className="composer-text-preview">
-                {title.trim() && <h2>{title}</h2>}
-                {body ? (
-                  <p>{body}</p>
-                ) : (
-                  <div className="composer-empty">
-                    <ImagePlus size={32} aria-hidden="true" />
-                    <p>写下正文即可发布纯文字条目，也可以添加一张静态图片。</p>
-                  </div>
-                )}
-              </div>
-            )}
-            {selection && (
-              <div className="composer-file-info">
-                <span>{selection.file.name}</span>
-                <span>
-                  {(selection.file.size / 1024 / 1024).toFixed(2)} MiB
-                  {upload?.width && upload.height ? ` · ${upload.width} × ${upload.height} px` : ''}
-                </span>
-              </div>
-            )}
-            {uploading && (
-              <p className="muted" role="status">
-                {upload ? '图片已上传，正在校验和处理…' : '正在上传图片…'}
-              </p>
-            )}
-            {upload?.status === 'ready' && <p role="status">图片已就绪</p>}
-            {uploadError && (
-              <div role="alert" className="error">
-                <p>{uploadError}</p>
-                {upload?.status !== 'failed' && (
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => setUploadRetry(uploadRetry + 1)}
-                  >
-                    重试上传
-                  </button>
-                )}
-                <button type="button" disabled={saving} onClick={() => inputRef.current?.click()}>
+            ) : uploadError ? (
+              <div className="composer-upload-failed">
+                <div className="composer-notice" role="alert">
+                  <p>图片未能上传</p>
+                  <p>{uploadError}</p>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={saving}
+                  onClick={() => inputRef.current?.click()}
+                >
                   重新选择图片
                 </button>
               </div>
+            ) : (
+              <div className="composer-empty">
+                <p className="composer-empty-title">纯文字也可以直接发布</p>
+                <p className="composer-empty-note">也可以选择或拖入一张图片，为文字附上画面。</p>
+              </div>
             )}
-            {id && <small className="muted">已发布条目的图片不可替换或移除。</small>}
+            <div className="composer-file-info">
+              <span>
+                {selection ? selection.file.name : '支持单张图片，暂不支持多图或图文混排'}
+              </span>
+              <span>{fileNote}</span>
+            </div>
+            {uploading && !uploadError && (
+              <p className="composer-hint" role="status">
+                {upload ? '图片已上传，正在校验和处理…' : '正在上传图片…'}
+              </p>
+            )}
+            {id && <small className="composer-hint">已发布条目的图片不可替换或移除。</small>}
             {hasImage && (
               <small className="composer-warning">
                 发布后原图将原样公开，可能包含拍摄位置等 EXIF 元数据。请确认图片适合公开。
               </small>
             )}
             {!hasImage && !id && (
-              <small className="muted">支持静态 JPEG、PNG、WebP、GIF；不支持 SVG 和动图。</small>
+              <small className="composer-hint">
+                支持静态 JPEG、PNG、WebP、GIF；不支持 SVG 和动图。
+              </small>
             )}
           </section>
           <fieldset className="composer-panel" disabled={saving}>
             <legend className="composer-sr-only">条目内容</legend>
             <div className="composer-field">
-              <label htmlFor="composer-title">
-                标题（可选）<span className="muted">{length(title.trim())}/200</span>
-              </label>
+              <div className="composer-label">
+                <span>标题（可选）</span>
+              </div>
               <input
                 id="composer-title"
                 value={title}
+                placeholder="给这条内容起个名字，也可以留空"
+                maxLength={200}
                 onChange={(event) => {
                   changed();
                   setTitle(event.target.value);
                 }}
-                aria-invalid={length(title.trim()) > 200}
               />
-              {length(title.trim()) > 200 && <small className="error">标题最多 200 字符。</small>}
             </div>
             <TagInput
               tags={tags}
@@ -570,55 +602,60 @@ function ComposerForm({ id }: { id: string | undefined }) {
               }}
             />
             <div className="composer-field">
-              <label htmlFor="composer-body">
-                正文
-                <span className="muted">
-                  {hasImage ? '选填' : '必填'} · {length(body)}/10000
-                </span>
-              </label>
+              <div className="composer-label">
+                <span>正文</span>
+                <span className="composer-hint">{hasImage ? '选填' : '必填'}</span>
+              </div>
               <textarea
                 id="composer-body"
                 value={body}
                 required={!hasImage}
-                rows={6}
+                rows={5}
+                maxLength={10000}
+                placeholder="写一点什么…"
                 onChange={(event) => {
                   changed();
                   setBody(event.target.value);
                 }}
-                aria-invalid={length(body) > 10000}
               />
-              {length(body) > 10000 && <small className="error">正文最多 10000 字符。</small>}
             </div>
             <div className="composer-field">
-              <span>条目属性</span>
-              <label className="composer-choice">
-                <input
-                  type="checkbox"
-                  checked={nsfw}
-                  onChange={(event) => {
-                    changed();
-                    setNsfw(event.target.checked);
-                  }}
-                />
-                <span>
-                  NSFW<small>含不适宜在公共场合浏览的内容</small>
-                </span>
-              </label>
-              <label className="composer-choice">
-                <input
-                  type="checkbox"
-                  checked={aiGenerated}
-                  onChange={(event) => {
-                    changed();
-                    setAiGenerated(event.target.checked);
-                  }}
-                />
-                <span>
-                  AI 生成<small>条目主要由 AI 生成</small>
-                </span>
-              </label>
-              <small className="muted">仅选中的标记会显示在条目上。</small>
+              <div className="composer-label">
+                <span>作品属性</span>
+              </div>
+              <div className="composer-attributes">
+                <label className="composer-attribute">
+                  <input
+                    type="checkbox"
+                    checked={nsfw}
+                    onChange={(event) => {
+                      changed();
+                      setNsfw(event.target.checked);
+                    }}
+                  />
+                  <span className="composer-attribute-text">
+                    <span className="composer-attribute-name">NSFW</span>
+                    <span className="composer-hint">含不适宜在公共场合浏览的内容</span>
+                  </span>
+                </label>
+                <label className="composer-attribute">
+                  <input
+                    type="checkbox"
+                    checked={aiGenerated}
+                    onChange={(event) => {
+                      changed();
+                      setAiGenerated(event.target.checked);
+                    }}
+                  />
+                  <span className="composer-attribute-text">
+                    <span className="composer-attribute-name">AI 生成</span>
+                    <span className="composer-hint">作品主要由 AI 生成</span>
+                  </span>
+                </label>
+              </div>
+              <small className="composer-hint">选中的标记会显示在作品右上角</small>
             </div>
+            <p className="composer-hint">填写正文或选择一张图片后，即可发布。</p>
           </fieldset>
         </div>
       </form>

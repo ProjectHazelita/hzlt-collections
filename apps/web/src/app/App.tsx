@@ -1,5 +1,5 @@
-import { Heart, Home, LogIn, LogOut, Plus, Search, Settings, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { FilePlusCorner, Heart, Home, Search, Settings, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Link,
   type Location,
@@ -37,7 +37,7 @@ function SearchBar() {
           navigate(`/search?q=${encodeURIComponent(value.trim())}`);
         }}
       >
-        <Search size={20} />
+        <Search size={16} />
         <input
           aria-label="搜索条目"
           placeholder="搜索"
@@ -47,7 +47,7 @@ function SearchBar() {
         />
         {value && (
           <button
-            className="icon-button"
+            className="search-clear"
             aria-label="清除搜索"
             type="button"
             onClick={() => {
@@ -58,24 +58,51 @@ function SearchBar() {
             <X size={18} />
           </button>
         )}
-        <button className="search-submit" type="submit">
-          搜索
-        </button>
       </form>
     </search>
   );
 }
-function Navigation() {
-  const { user, logout } = useAuth();
-  const [menu, setMenu] = useState(false);
+
+function AccountArea() {
+  const { user, loading, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
+  const slot = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!slot.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  if (loading) return null;
+  if (!user) {
+    return (
+      <Link
+        className="login-entry"
+        to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+      >
+        登录
+      </Link>
+    );
+  }
   async function exit() {
     setBusy(true);
+    setError('');
     try {
       await logout();
-      setMenu(false);
+      setOpen(false);
       navigate('/');
     } catch (cause) {
       setError(errorMessage(cause));
@@ -83,6 +110,64 @@ function Navigation() {
       setBusy(false);
     }
   }
+  return (
+    <div className="account-slot" ref={slot}>
+      <button
+        className="account-avatar"
+        type="button"
+        aria-label="账号菜单"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {Array.from(user.username)[0]}
+      </button>
+      {open && (
+        <div className="account-menu" role="menu" aria-label="账号">
+          <p className="account-name">
+            {user.username} · {user.role}
+          </p>
+          <p className="account-role">{user.role === 'owner' ? '站点所有者' : '注册用户'}</p>
+          <Link
+            className="menu-button"
+            role="menuitem"
+            to="/publish"
+            onClick={() => setOpen(false)}
+          >
+            发布条目
+          </Link>
+          {user.role === 'owner' && (
+            <Link
+              className="menu-button"
+              role="menuitem"
+              to="/settings/content"
+              onClick={() => setOpen(false)}
+            >
+              站点管理
+            </Link>
+          )}
+          <button
+            className="menu-button"
+            type="button"
+            role="menuitem"
+            disabled={busy}
+            onClick={() => void exit()}
+          >
+            {busy ? '退出中…' : '退出登录'}
+          </button>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Navigation() {
+  const { user } = useAuth();
   return (
     <nav className="navigation" aria-label="主导航">
       <div className="navigation-top">
@@ -96,72 +181,47 @@ function Navigation() {
           <Heart size={30} />
         </NavLink>
         <NavLink to="/publish" aria-label="发布条目">
-          <Plus size={30} />
+          <FilePlusCorner size={30} />
         </NavLink>
       </div>
       <div className="navigation-bottom">
-        {user?.role === 'owner' && (
-          <NavLink to="/settings/content" aria-label="内容管理">
+        {user?.role === 'owner' ? (
+          <NavLink to="/settings/content" aria-label="站点管理">
             <Settings size={30} />
           </NavLink>
-        )}
-        <button
-          className="account-trigger"
-          type="button"
-          aria-label={user ? '账号菜单' : '登录或注册'}
-          aria-expanded={menu}
-          onClick={() => setMenu((value) => !value)}
-        >
-          {user?.role === 'owner' ? (
-            <span className="avatar">{Array.from(user.username)[0]}</span>
-          ) : (
+        ) : (
+          <span className="navigation-idle" title="站点管理">
             <Settings size={30} />
-          )}
-        </button>
-        {menu && (
-          <div className="account-menu">
-            <p>{user?.username ?? '访客'}</p>
-            {user ? (
-              <button type="button" disabled={busy} onClick={() => void exit()}>
-                <LogOut size={18} />
-                {busy ? '退出中…' : '退出登录'}
-              </button>
-            ) : (
-              <>
-                <Link to="/login" onClick={() => setMenu(false)}>
-                  <LogIn size={18} />
-                  登录
-                </Link>
-                <Link to="/register" onClick={() => setMenu(false)}>
-                  注册
-                </Link>
-              </>
-            )}
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
-            <button type="button" onClick={() => setMenu(false)}>
-              关闭菜单
-            </button>
-          </div>
+          </span>
         )}
       </div>
     </nav>
   );
 }
+
 function AppShell() {
+  const location = useLocation();
+  const composer =
+    location.pathname === '/publish' || /^\/entries\/[^/]+\/edit/.test(location.pathname);
   return (
     <div className="app-shell">
       <Navigation />
-      <main className="main-content">
-        <SearchBar />
+      <main className={composer ? 'main-content composer-main' : 'main-content'}>
+        {!composer && (
+          <div className="top-bar">
+            <Link to="/" className="mobile-brand" aria-label="hzlt!Collections 首页">
+              h!Cl
+            </Link>
+            <SearchBar />
+            <AccountArea />
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
   );
 }
+
 function RequireUser({ owner = false }: { owner?: boolean }) {
   const { user, loading, error, refresh } = useAuth();
   const location = useLocation();
@@ -198,6 +258,7 @@ function RequireUser({ owner = false }: { owner?: boolean }) {
     );
   return <Outlet />;
 }
+
 export function App() {
   const location = useLocation();
   const state = location.state as { backgroundLocation?: Location } | null;
@@ -216,8 +277,6 @@ export function App() {
           <Route element={<RequireUser owner />}>
             <Route path="settings/content" element={<ContentManagement />} />
           </Route>
-          <Route path="login" element={<AuthForm kind="login" />} />
-          <Route path="register" element={<AuthForm kind="register" />} />
           <Route
             path="*"
             element={
@@ -228,6 +287,8 @@ export function App() {
             }
           />
         </Route>
+        <Route path="login" element={<AuthForm kind="login" />} />
+        <Route path="register" element={<AuthForm kind="register" />} />
         <Route path="entries/:id" element={<EntryDetail />} />
       </Routes>
       {background && (

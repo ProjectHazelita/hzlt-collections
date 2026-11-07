@@ -52,8 +52,12 @@ export function ConfirmDeleteDialog({
       }}
     >
       <div className="delete-dialog-content">
-        <h2 id="delete-title">删除条目？</h2>
-        <p>条目 #{entry?.id} 及其图片将无法再公开访问。此操作无法撤销。</p>
+        <h2 id="delete-title">{entry?.asset ? '删除这条内容？' : '删除这条文字？'}</h2>
+        <p>
+          {entry?.asset
+            ? '删除后不可恢复。条目及关联图片将不再可访问。'
+            : '删除后不可恢复。确认删除这条文字内容吗？'}
+        </p>
         {error && (
           <p className="error" role="alert">
             {error}

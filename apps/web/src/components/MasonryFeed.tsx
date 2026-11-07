@@ -1,23 +1,26 @@
 import type { Entry } from '@hcl/contracts';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { EntryIdentity } from './EntryIdentity';
-export function AttributeBadges({ entry }: { entry: Entry }) {
+
+export function AttributeBadges({ entry, overlay = false }: { entry: Entry; overlay?: boolean }) {
   return (
-    <div className="attribute-badges">
+    <div className={overlay ? 'attribute-badges overlay' : 'attribute-badges'}>
       {entry.declarations.nsfw && <span>NSFW</span>}
       {entry.declarations.aiGenerated && <span>AI 生成</span>}
     </div>
   );
 }
-export function Author({ entry }: { entry: Entry }) {
+
+export function Author({ entry, detail = false }: { entry: Entry; detail?: boolean }) {
   return (
-    <span className="author">
+    <span className={detail ? 'author author-detail' : 'author'}>
       <span className="avatar">{Array.from(entry.author.username)[0]}</span>
       <span>{entry.author.username}</span>
     </span>
   );
 }
+
 function EntryCard({
   entry,
   onMeasure,
@@ -39,7 +42,7 @@ function EntryCard({
   const asset = entry.asset;
   const tall = asset ? asset.height / asset.width > 3 : false;
   return (
-    <article ref={card} className={asset ? 'entry-card image-card' : 'entry-card text-card'}>
+    <article ref={card} className="entry-card">
       <Link
         className="card-main"
         to={`/entries/${entry.id}`}
@@ -47,7 +50,7 @@ function EntryCard({
         aria-label={entry.title ?? (entry.body.slice(0, 60) || `查看条目 #${entry.id}`)}
       >
         {asset ? (
-          <div className={tall ? 'card-image long-image' : 'card-image'}>
+          <div className="card-image">
             <img
               src={asset.thumbnailUrl}
               alt={entry.title ?? ''}
@@ -56,26 +59,43 @@ function EntryCard({
               loading="lazy"
             />
             {tall && <span className="long-image-label">长图</span>}
+            <AttributeBadges entry={entry} overlay />
+            {(entry.title || entry.tags.length > 0) && (
+              <div className="card-overlay">
+                {entry.title && <span className="card-overlay-title">{entry.title}</span>}
+                {entry.tags.length > 0 && (
+                  <div className="card-tags">
+                    {entry.tags.map((tag) => (
+                      <span key={tag}># {tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-card-content">
             {entry.title && <h2>{entry.title}</h2>}
             <p>{entry.body}</p>
             {entry.body.length > 160 && <span className="read-more">阅读全文</span>}
+            <AttributeBadges entry={entry} />
           </div>
         )}
-        <AttributeBadges entry={entry} />
       </Link>
       <div className="card-metadata">
         <Author entry={entry} />
-        <EntryIdentity id={entry.id} />
+        <EntryIdentity id={entry.id} variant="card" />
       </div>
     </article>
   );
 }
+
 export function MasonryFeed({ entries }: { entries: Entry[] }) {
   const container = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const [mobile, setMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  );
   const [revision, setRevision] = useState(0);
   const measurements = useRef(new Map<string, number>());
   const measure = useRef((id: string, height: number) => {
@@ -88,14 +108,19 @@ export function MasonryFeed({ entries }: { entries: Entry[] }) {
   useLayoutEffect(() => {
     const element = container.current;
     if (!element) return;
+    // Measure before the first paint so the feed never renders one wide column first.
+    setWidth(element.clientWidth);
     const observer = new ResizeObserver(() => setWidth(element.clientWidth));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const count =
-    typeof window !== 'undefined' && window.innerWidth < 768
-      ? 2
-      : Math.min(5, Math.max(1, Math.floor((width + 12) / 252)));
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const update = () => setMobile(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  const count = mobile ? 2 : Math.min(5, Math.max(1, Math.floor((width + 12) / 252)));
   const columnWidth = (width - (count - 1) * 12) / count;
   const previous = useRef({
     width: 0,
