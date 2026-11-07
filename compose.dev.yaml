@@ -2,6 +2,7 @@ name: hcl-dev
 
 x-node-environment: &node-environment
   NODE_ENV: development
+  GOMAXPROCS: "2"
   DATABASE_URL: postgresql://hcl:${HCL_DB_PASSWORD:?Run pnpm setup:env first}@db:5432/hcl
   TEST_DATABASE_URL: postgresql://hcl:${HCL_DB_PASSWORD:?Run pnpm setup:env first}@db:5432/hcl_test
   SESSION_SECRET: ${SESSION_SECRET:?Run pnpm setup:env first}
@@ -83,7 +84,8 @@ services:
 
   worker:
     <<: *node
-    command: [pnpm, --filter, "@hcl/worker", dev]
+    working_dir: /app/apps/worker
+    command: [node, --watch, --watch-preserve-output, --import, tsx, src/main.ts]
     depends_on:
       db:
         condition: service_healthy

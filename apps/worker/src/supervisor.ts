@@ -60,7 +60,7 @@ export async function processImage(options: ProcessImageOptions): Promise<MediaM
   const { promise, resolve, reject } = Promise.withResolvers<MediaMetadata>();
   const child = fork(childPath, [], {
     execArgv: ['--max-old-space-size=128', ...(development ? ['--import', 'tsx'] : [])],
-    env: { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', TZ: 'UTC' },
+    env: { PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', TZ: 'UTC', ...(development ? { GOMAXPROCS: '2' } : {}) },
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     serialization: 'json',
     killSignal: 'SIGKILL',
