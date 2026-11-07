@@ -386,7 +386,7 @@ h2 {
   align-items: flex-start;
   gap: 8px;
   padding: 8px;
-  background: linear-gradient(to bottom, #ffffff00 0%, #6666664d 32.69%, #000000cc 100%);
+  background: linear-gradient(to bottom, #ffffff00 0%, #000000cc 100%);
 }
 .card-overlay-title {
   font-size: 14px;
