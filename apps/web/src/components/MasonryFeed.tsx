@@ -40,7 +40,7 @@ function EntryCard({
     return () => observer.disconnect();
   }, [entry.id, onMeasure]);
   const asset = entry.asset;
-  const tall = asset ? asset.height / asset.width > 3 : false;
+  const tall = asset ? asset.height / asset.width > 2.5 : false;
   return (
     <article ref={card} className="entry-card">
       <Link
@@ -50,7 +50,7 @@ function EntryCard({
         aria-label={entry.title ?? (entry.body.slice(0, 60) || `查看条目 #${entry.id}`)}
       >
         {asset ? (
-          <div className="card-image">
+          <div className={tall ? 'card-image long-image' : 'card-image'}>
             <img
               src={asset.thumbnailUrl}
               alt={entry.title ?? ''}
