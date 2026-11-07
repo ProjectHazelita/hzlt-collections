@@ -1,0 +1,122 @@
+name: hcl-dev
+
+x-node-environment: &node-environment
+  NODE_ENV: development
+  DATABASE_URL: postgresql://hcl:${HCL_DB_PASSWORD:?Run pnpm setup:env first}@db:5432/hcl
+  TEST_DATABASE_URL: postgresql://hcl:${HCL_DB_PASSWORD:?Run pnpm setup:env first}@db:5432/hcl_test
+  SESSION_SECRET: ${SESSION_SECRET:?Run pnpm setup:env first}
+  PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://127.0.0.1:5173}
+  DATA_DIR: /var/lib/hcl/media
+  API_PORT: "3000"
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+  MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-40000000}
+  MAX_IMAGE_DIMENSION: ${MAX_IMAGE_DIMENSION:-20000}
+  IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-30000}
+  SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
+
+x-source-volumes: &source-volumes
+  - ./apps/api/src:/app/apps/api/src:z
+  - ./apps/worker/src:/app/apps/worker/src:z
+  - ./apps/web/src:/app/apps/web/src:z
+  - ./packages/contracts/src:/app/packages/contracts/src:z
+  - ./packages/server/src:/app/packages/server/src:z
+  - ./packages/server/drizzle:/app/packages/server/drizzle:z
+  - ./tests:/app/tests:z
+  - ./scripts:/app/scripts:z
+  - media:/var/lib/hcl/media
+
+x-node: &node
+  image: hcl-development
+  build:
+    context: .
+    target: development
+  working_dir: /app
+  init: true
+  environment: *node-environment
+  volumes: *source-volumes
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run pnpm setup:env first}
+      HCL_DB_PASSWORD: ${HCL_DB_PASSWORD:?Run pnpm setup:env first}
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-55432}:5432"
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-hcl.sh:ro,z
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    <<: *node
+    command: [pnpm, --filter, "@hcl/api", db:migrate]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *node
+    command: [pnpm, --filter, "@hcl/api", dev]
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 10
+    stop_grace_period: 40s
+
+  worker:
+    <<: *node
+    command: [pnpm, --filter, "@hcl/worker", dev]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 64
+    stop_grace_period: 40s
+
+  web:
+    <<: *node
+    command: [pnpm, --filter, "@hcl/web", dev, --host, 0.0.0.0, --port, "5173"]
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5173}:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  tools:
+    <<: *node
+    profiles: [tools]
+    command: [pnpm, typecheck:packages]
+    environment:
+      <<: *node-environment
+      API_BASE_URL: http://api:3000
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-hcl-dev}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  database:
+  media:

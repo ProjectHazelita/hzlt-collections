@@ -1,0 +1,96 @@
+name: hcl
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DATABASE_URL: postgresql://hcl:${HCL_DB_PASSWORD:?Run pnpm setup:env first}@db:5432/hcl
+  SESSION_SECRET: ${SESSION_SECRET:?Run pnpm setup:env first}
+  PUBLIC_ORIGIN: ${PRODUCTION_ORIGIN:-http://127.0.0.1:18080}
+  DATA_DIR: /var/lib/hcl/media
+  API_PORT: "3000"
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+  MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-40000000}
+  MAX_IMAGE_DIMENSION: ${MAX_IMAGE_DIMENSION:-20000}
+  IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-30000}
+  SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
+
+x-runtime: &runtime
+  init: true
+  user: node
+  working_dir: /app
+  environment: *app-environment
+  volumes:
+    - media:/var/lib/hcl/media
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 40s
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run pnpm setup:env first}
+      HCL_DB_PASSWORD: ${HCL_DB_PASSWORD:?Run pnpm setup:env first}
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-hcl.sh:ro,z
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    stop_grace_period: 40s
+
+  migrate:
+    <<: *runtime
+    image: hcl-api
+    build:
+      context: .
+      target: api
+    command: [node, apps/api/dist/migrate.js]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *runtime
+    image: hcl-api
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-18080}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 10
+
+  worker:
+    <<: *runtime
+    image: hcl-worker
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 64
+
+volumes:
+  database:
+  media:

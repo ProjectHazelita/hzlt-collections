@@ -1,0 +1,13 @@
+{
+  "name": "@hcl/contracts",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "typebox": "1.4.5"
+  },
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module"
+}

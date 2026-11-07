@@ -1,0 +1,31 @@
+{
+  "name": "@hcl/api",
+  "scripts": {
+    "dev": "tsx watch --include '../../packages/server/src/**' --include '../../packages/contracts/src/**' src/main.ts",
+    "build": "tsup src/main.ts src/migrate.ts --format esm --target node24 --no-splitting",
+    "start": "node dist/main.js",
+    "db:migrate": "tsx src/migrate.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@hcl/server": "workspace:*",
+    "@hcl/contracts": "workspace:*",
+    "pg": "8.23.1",
+    "drizzle-orm": "0.45.4",
+    "pg-boss": "12.38.1",
+    "argon2": "0.45.2",
+    "fastify": "5.12.8",
+    "@fastify/type-provider-typebox": "6.3.0",
+    "typebox": "1.4.5",
+    "ajv-formats": "3.0.1",
+    "@fastify/cookie": "11.1.5",
+    "@fastify/session": "11.1.6",
+    "@fastify/multipart": "10.1.8",
+    "@fastify/static": "10.1.10",
+    "@fastify/swagger": "9.9.3",
+    "@fastify/rate-limit": "11.2.2"
+  },
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module"
+}

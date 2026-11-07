@@ -1,0 +1,10 @@
+import { fileURLToPath } from 'node:url';
+import { loadConfig,createDatabase,createQueue,LocalStorage } from '@hcl/server';
+import { buildApp } from './app.js';
+const config=loadConfig(fileURLToPath(new URL('../../../',import.meta.url)));
+const {pool,db}=createDatabase(config.databaseUrl);await pool.query('select 1');
+const boss=await createQueue(config.databaseUrl);
+const storage=new LocalStorage(config.dataDir);await storage.initialize();
+const app=await buildApp({db,boss,storage,config,serveWeb:process.env.NODE_ENV==='production'});
+for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,async()=>{await app.close();await boss.stop();await pool.end();});
+await app.listen({host:'0.0.0.0',port:config.port});

@@ -1,0 +1,17 @@
+.git
+.omp
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+var/media
+coverage
+**/coverage
+test-results
+playwright-report
+proof
+.proof
+**/proof-data
+**/test-proof-data
+*.log

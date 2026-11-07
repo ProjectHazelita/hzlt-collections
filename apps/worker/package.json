@@ -1,0 +1,19 @@
+{
+  "name": "@hcl/worker",
+  "scripts": {
+    "dev": "tsx watch --include '../../packages/server/src/**' src/main.ts",
+    "build": "tsup src/main.ts src/media-child.ts --format esm --target node24 --no-splitting",
+    "start": "node dist/main.js",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@hcl/server": "workspace:*",
+    "pg": "8.23.1",
+    "drizzle-orm": "0.45.4",
+    "pg-boss": "12.38.1",
+    "sharp": "0.35.5"
+  },
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module"
+}
