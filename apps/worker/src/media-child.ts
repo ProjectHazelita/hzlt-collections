@@ -1,30 +1,59 @@
 import { constants } from 'node:fs';
-import { open, type FileHandle } from 'node:fs/promises';
+import { type FileHandle, open } from 'node:fs/promises';
 import { isAbsolute, normalize } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import sharp from 'sharp';
 import type { ImageErrorCode, ImageFormat } from '@hcl/contracts';
-import { sniffImageFormat, type MediaMetadata } from '@hcl/server/media';
+import { type MediaMetadata, sniffImageFormat } from '@hcl/server/media';
+import sharp from 'sharp';
 
 class ImageFailure extends Error {
-  constructor(readonly errorCode: ImageErrorCode) { super(errorCode); }
+  constructor(readonly errorCode: ImageErrorCode) {
+    super(errorCode);
+  }
 }
 
-type Input = { inputPath: string; outputPath: string; maxImagePixels: number; maxImageDimension: number };
+type Input = {
+  inputPath: string;
+  outputPath: string;
+  maxImagePixels: number;
+  maxImageDimension: number;
+};
 
 function validInput(value: unknown): value is Input {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).length !== 4 || !['inputPath', 'outputPath', 'maxImagePixels', 'maxImageDimension'].every((key) => Object.hasOwn(input, key))) return false;
-  return [input.inputPath, input.outputPath].every((path) => typeof path === 'string' && isAbsolute(path) && normalize(path) === path && !path.includes('\0')) &&
-    input.inputPath !== input.outputPath && (input.outputPath as string).endsWith('.webp') &&
-    [input.maxImagePixels, input.maxImageDimension].every((limit) => typeof limit === 'number' && Number.isSafeInteger(limit) && limit > 0);
+  if (
+    Object.keys(input).length !== 4 ||
+    !['inputPath', 'outputPath', 'maxImagePixels', 'maxImageDimension'].every((key) =>
+      Object.hasOwn(input, key),
+    )
+  )
+    return false;
+  return (
+    [input.inputPath, input.outputPath].every(
+      (path) =>
+        typeof path === 'string' &&
+        isAbsolute(path) &&
+        normalize(path) === path &&
+        !path.includes('\0'),
+    ) &&
+    input.inputPath !== input.outputPath &&
+    (input.outputPath as string).endsWith('.webp') &&
+    [input.maxImagePixels, input.maxImageDimension].every(
+      (limit) => typeof limit === 'number' && Number.isSafeInteger(limit) && limit > 0,
+    )
+  );
 }
 
 async function readExactly(file: FileHandle, buffer: Buffer, position: number): Promise<void> {
   let offset = 0;
   while (offset < buffer.length) {
-    const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, position + offset);
+    const { bytesRead } = await file.read(
+      buffer,
+      offset,
+      buffer.length - offset,
+      position + offset,
+    );
     if (bytesRead === 0) throw new ImageFailure('INVALID_IMAGE');
     offset += bytesRead;
   }
@@ -33,7 +62,8 @@ async function readExactly(file: FileHandle, buffer: Buffer, position: number): 
 /** Inspect container structure with constant-size reads, never allocating declared chunk sizes. */
 async function preflight(file: FileHandle): Promise<ImageFormat> {
   const info = await file.stat();
-  if (!info.isFile() || !Number.isSafeInteger(info.size) || info.size < 3) throw new ImageFailure('INVALID_IMAGE');
+  if (!info.isFile() || !Number.isSafeInteger(info.size) || info.size < 3)
+    throw new ImageFailure('INVALID_IMAGE');
   const header = Buffer.alloc(Math.min(12, info.size));
   await readExactly(file, header, 0);
   const format = sniffImageFormat(header);
@@ -47,7 +77,8 @@ async function preflight(file: FileHandle): Promise<ImageFormat> {
       await readExactly(file, chunk, position);
       const length = chunk.readUInt32BE(0);
       const type = chunk.toString('ascii', 4, 8);
-      if (length > 0x7fffffff || length > info.size - position - 12) throw new ImageFailure('INVALID_IMAGE');
+      if (length > 0x7fffffff || length > info.size - position - 12)
+        throw new ImageFailure('INVALID_IMAGE');
       if (type === 'acTL') throw new ImageFailure('ANIMATION_NOT_SUPPORTED');
       position += length + 12;
       if (type === 'IEND') {
@@ -86,10 +117,18 @@ async function processInput(input: Input): Promise<MediaMetadata> {
   sharp.concurrency(1);
   const file = await open(input.inputPath, constants.O_RDONLY | constants.O_NOFOLLOW);
   let format: ImageFormat;
-  try { format = await preflight(file); } finally { await file.close(); }
+  try {
+    format = await preflight(file);
+  } finally {
+    await file.close();
+  }
   const image = sharp(input.inputPath, {
-    failOn: 'warning', limitInputPixels: input.maxImagePixels, unlimited: false,
-    sequentialRead: true, pages: 1, animated: false,
+    failOn: 'warning',
+    limitInputPixels: input.maxImagePixels,
+    unlimited: false,
+    sequentialRead: true,
+    pages: 1,
+    animated: false,
   }).timeout({ seconds: 20 });
   let output: FileHandle | undefined;
   try {
@@ -97,12 +136,37 @@ async function processInput(input: Input): Promise<MediaMetadata> {
     if (metadata.format !== format) throw new ImageFailure('UNSUPPORTED_IMAGE_TYPE');
     if ((metadata.pages ?? 1) > 1) throw new ImageFailure('ANIMATION_NOT_SUPPORTED');
     const { width, height } = metadata;
-    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) throw new ImageFailure('INVALID_IMAGE');
-    if (width > input.maxImageDimension || height > input.maxImageDimension || width * height > input.maxImagePixels) throw new ImageFailure('IMAGE_TOO_LARGE');
-    const swapped = metadata.orientation !== undefined && metadata.orientation >= 5 && metadata.orientation <= 8;
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0)
+      throw new ImageFailure('INVALID_IMAGE');
+    if (
+      width > input.maxImageDimension ||
+      height > input.maxImageDimension ||
+      width * height > input.maxImagePixels
+    )
+      throw new ImageFailure('IMAGE_TOO_LARGE');
+    const swapped =
+      metadata.orientation !== undefined && metadata.orientation >= 5 && metadata.orientation <= 8;
     output = await open(input.outputPath, 'wx', 0o600);
-    await pipeline(image.autoOrient().resize({ width: 768, height: 2048, fit: 'inside', withoutEnlargement: true, fastShrinkOnLoad: false }).webp({ quality: 82 }), output.createWriteStream());
-    return { format, originalWidth: width, originalHeight: height, width: swapped ? height : width, height: swapped ? width : height };
+    await pipeline(
+      image
+        .autoOrient()
+        .resize({
+          width: 768,
+          height: 2048,
+          fit: 'inside',
+          withoutEnlargement: true,
+          fastShrinkOnLoad: false,
+        })
+        .webp({ quality: 82 }),
+      output.createWriteStream(),
+    );
+    return {
+      format,
+      originalWidth: width,
+      originalHeight: height,
+      width: swapped ? height : width,
+      height: swapped ? width : height,
+    };
   } catch (error) {
     image.destroy();
     // Keep storage/OS failures retryable; malformed data and native decode warnings are terminal.
@@ -111,7 +175,12 @@ async function processInput(input: Input): Promise<MediaMetadata> {
     const message = error instanceof Error ? error.message : '';
     if (/pixel limit|exceeds.*pixels/i.test(message)) throw new ImageFailure('IMAGE_TOO_LARGE');
     if (/timeout|timed out/i.test(message)) throw new ImageFailure('IMAGE_TIMEOUT');
-    if (/write error|unable to write|no space left|permission denied|input file is missing/i.test(message)) throw error;
+    if (
+      /write error|unable to write|no space left|permission denied|input file is missing/i.test(
+        message,
+      )
+    )
+      throw error;
     throw new ImageFailure('INVALID_IMAGE');
   } finally {
     await output?.close();
@@ -123,7 +192,9 @@ process.once('SIGTERM', () => process.kill(process.pid, 'SIGKILL'));
 process.once('SIGINT', () => process.kill(process.pid, 'SIGKILL'));
 if (!process.connected || !process.send) process.exit(1);
 process.once('message', async (value: unknown) => {
-  let result: { ok: true; metadata: MediaMetadata } | { ok: false; errorCode: ImageErrorCode; retryable: boolean };
+  let result:
+    | { ok: true; metadata: MediaMetadata }
+    | { ok: false; errorCode: ImageErrorCode; retryable: boolean };
   try {
     if (!validInput(value)) throw new ImageFailure('IMAGE_PROCESSING_FAILED');
     result = { ok: true, metadata: await processInput(value) };
@@ -131,6 +202,7 @@ process.once('message', async (value: unknown) => {
     const errorCode = error instanceof ImageFailure ? error.errorCode : 'IMAGE_PROCESSING_FAILED';
     result = { ok: false, errorCode, retryable: errorCode === 'IMAGE_PROCESSING_FAILED' };
   }
-  if (Buffer.byteLength(JSON.stringify(result)) > 4096 || !process.connected || !process.send) process.exit(1);
+  if (Buffer.byteLength(JSON.stringify(result)) > 4096 || !process.connected || !process.send)
+    process.exit(1);
   process.send(result, (error) => process.exit(error ? 1 : 0));
 });

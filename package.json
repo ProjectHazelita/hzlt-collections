@@ -1,6 +1,11 @@
 {
   "name": "hzlt-collections",
   "scripts": {
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "setup:env": "node scripts/init-env.mjs",
     "dev": "docker compose -f compose.dev.yaml up --build -d",
     "db:migrate": "docker compose -f compose.dev.yaml run --rm migrate",
@@ -14,12 +19,13 @@
     "smoke:api:internal": "tsx scripts/smoke-api.ts"
   },
   "devDependencies": {
-    "typescript": "7.0.2",
-    "tsx": "4.23.15",
-    "tsup": "9.0.0",
-    "vitest": "5.1.0",
+    "@biomejs/biome": "2.6.6",
+    "@types/node": "24",
     "bumpp": "12.3.0",
-    "@types/node": "24"
+    "tsup": "9.0.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
   },
   "version": "0.1.0-dev.0",
   "private": true,

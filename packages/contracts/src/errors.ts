@@ -1,4 +1,4 @@
-import { Type, type Static } from 'typebox';
+import { type Static, Type } from 'typebox';
 
 export const ImageErrorCodeSchema = Type.Union([
   Type.Literal('UNSUPPORTED_IMAGE_TYPE'),
@@ -30,12 +30,18 @@ export type ErrorCode = Static<typeof ErrorCodeSchema>;
 
 export const ErrorFieldsSchema = Type.Record(Type.String(), Type.String());
 export type ErrorFields = Static<typeof ErrorFieldsSchema>;
-export const ErrorResponseSchema = Type.Object({
-  error: Type.Object({
-    code: ErrorCodeSchema,
-    message: Type.String(),
-    requestId: Type.String(),
-    fields: Type.Optional(ErrorFieldsSchema),
-  }, { additionalProperties: false }),
-}, { additionalProperties: false });
+export const ErrorResponseSchema = Type.Object(
+  {
+    error: Type.Object(
+      {
+        code: ErrorCodeSchema,
+        message: Type.String(),
+        requestId: Type.String(),
+        fields: Type.Optional(ErrorFieldsSchema),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
 export type ErrorResponse = Static<typeof ErrorResponseSchema>;

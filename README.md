@@ -23,6 +23,23 @@ docker compose -f compose.dev.yaml exec -T api pnpm --filter @hcl/contracts --fi
 
 数据库和私有媒体使用独立命名卷。不要对已有数据运行 `down -v`；停止开发服务使用 `docker compose -f compose.dev.yaml down`。媒体根目录不得作为静态目录公开。
 
+### 代码检查与格式化
+
+使用固定版本的 Biome 检查 TypeScript、React TSX、JavaScript、JSON 与 CSS，并统一格式和 imports。Biome 命令直接在宿主运行，不需要启动 Docker；首次拉取仓库后用 `pnpm install --ignore-scripts` 安装工具即可，应用和原生依赖仍在容器内运行。
+
+```sh
+pnpm check         # lint + 格式 + imports 检查，不修改文件
+pnpm check:fix     # 格式化、整理 imports，并应用安全修复
+pnpm lint          # 仅 lint
+pnpm format        # 仅格式化并写入
+pnpm format:check  # 仅检查格式，不写入
+pnpm typecheck     # 完整 TypeScript 类型检查，仍通过 Docker tools 执行
+```
+
+规则在 `biome.json`，采用推荐规则、2 空格缩进、100 字符行宽、JS/TS 单引号；遵循 Git ignore，排除导出设计资产和生成的数据库迁移。不默认应用 `--unsafe` 修复；有意保留的重试依赖、原生 dialog 键盘行为等使用带理由的局部例外。推荐规则中的 warning/info 仍会报告，error 会使检查失败。
+
+VS Code 可安装 **Biome** 扩展（`biomejs.biome`），将其设为默认 formatter 并启用保存时格式化。Biome 不替代 `tsc`，也不替代交互与业务回归。
+
 ## 身份与请求安全
 
 开放注册；第一个成功提交注册事务的用户成为唯一 owner，后续注册者为 member。首次注册完成前不要向不可信网络暴露实例。用户名按 NFKC 和小写键去重；密码为 12–128 个字符，不移除空格，以 Argon2id 保存。

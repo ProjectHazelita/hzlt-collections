@@ -1,2 +1,2 @@
 import { defineConfig } from 'tsup';
-export default defineConfig({noExternal:[/^@hcl\//],splitting:false});
+export default defineConfig({ noExternal: [/^@hcl\//], splitting: false });

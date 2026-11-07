@@ -1,14 +1,44 @@
-import sharp from 'sharp';
 import { crc32 } from 'node:zlib';
+import sharp from 'sharp';
 
 export async function staticImages() {
-  const images: Array<{ name: string; bytes: Buffer; width: number; height: number; originalWidth: number; originalHeight: number }> = [];
+  const images: Array<{
+    name: string;
+    bytes: Buffer;
+    width: number;
+    height: number;
+    originalWidth: number;
+    originalHeight: number;
+  }> = [];
   for (const format of ['jpeg', 'png', 'webp', 'gif'] as const) {
-    const bytes = await sharp({ create: { width: 12, height: 8, channels: 4, background: '#8839ef' } }).toFormat(format).toBuffer();
-    images.push({ name: format, bytes, width: 12, height: 8, originalWidth: 12, originalHeight: 8 });
+    const bytes = await sharp({
+      create: { width: 12, height: 8, channels: 4, background: '#8839ef' },
+    })
+      .toFormat(format)
+      .toBuffer();
+    images.push({
+      name: format,
+      bytes,
+      width: 12,
+      height: 8,
+      originalWidth: 12,
+      originalHeight: 8,
+    });
   }
-  const rotated = await sharp({ create: { width: 12, height: 8, channels: 3, background: '#4c4f69' } }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
-  images.push({ name: 'rotated-jpeg', bytes: rotated, width: 8, height: 12, originalWidth: 12, originalHeight: 8 });
+  const rotated = await sharp({
+    create: { width: 12, height: 8, channels: 3, background: '#4c4f69' },
+  })
+    .withMetadata({ orientation: 6 })
+    .jpeg()
+    .toBuffer();
+  images.push({
+    name: 'rotated-jpeg',
+    bytes: rotated,
+    width: 8,
+    height: 12,
+    originalWidth: 12,
+    originalHeight: 8,
+  });
   return images;
 }
 
@@ -23,9 +53,10 @@ function chunk(type: string, data: Buffer): Buffer {
 
 function imageData(png: Buffer): Buffer {
   const segments: Buffer[] = [];
-  for (let offset = 8; offset + 12 <= png.length;) {
+  for (let offset = 8; offset + 12 <= png.length; ) {
     const length = png.readUInt32BE(offset);
-    if (png.toString('ascii', offset + 4, offset + 8) === 'IDAT') segments.push(png.subarray(offset + 8, offset + 8 + length));
+    if (png.toString('ascii', offset + 4, offset + 8) === 'IDAT')
+      segments.push(png.subarray(offset + 8, offset + 8 + length));
     offset += length + 12;
   }
   return Buffer.concat(segments);
@@ -33,13 +64,23 @@ function imageData(png: Buffer): Buffer {
 
 /** A valid two-frame APNG with genuine PNG-compressed pixels, not a renamed SVG. */
 export async function animatedImages() {
-  const first = await sharp({ create: { width: 4, height: 4, channels: 4, background: '#8839ef' } }).png().toBuffer();
-  const second = await sharp({ create: { width: 4, height: 4, channels: 4, background: '#d20f39' } }).png().toBuffer();
-  const gif = await sharp([first, second], { join: { animated: true } }).gif({ loop: 0, delay: [100, 100] }).toBuffer();
-  const webp = await sharp([first, second], { join: { animated: true } }).webp({ loop: 0, delay: [100, 100] }).toBuffer();
+  const first = await sharp({ create: { width: 4, height: 4, channels: 4, background: '#8839ef' } })
+    .png()
+    .toBuffer();
+  const second = await sharp({
+    create: { width: 4, height: 4, channels: 4, background: '#d20f39' },
+  })
+    .png()
+    .toBuffer();
+  const gif = await sharp([first, second], { join: { animated: true } })
+    .gif({ loop: 0, delay: [100, 100] })
+    .toBuffer();
+  const webp = await sharp([first, second], { join: { animated: true } })
+    .webp({ loop: 0, delay: [100, 100] })
+    .toBuffer();
   const animation = Buffer.alloc(8);
   animation.writeUInt32BE(2);
-  const controls = [0, 1].map(sequence => {
+  const controls = [0, 1].map((sequence) => {
     const control = Buffer.alloc(26);
     control.writeUInt32BE(sequence);
     control.writeUInt32BE(4, 4);
@@ -53,8 +94,17 @@ export async function animatedImages() {
   secondData.writeUInt32BE(2);
   compressedSecond.copy(secondData, 4);
   const apng = Buffer.concat([
-    first.subarray(0, 33), chunk('acTL', animation), controls[0]!, chunk('IDAT', imageData(first)),
-    controls[1]!, chunk('fdAT', secondData), chunk('IEND', Buffer.alloc(0)),
+    first.subarray(0, 33),
+    chunk('acTL', animation),
+    controls[0]!,
+    chunk('IDAT', imageData(first)),
+    controls[1]!,
+    chunk('fdAT', secondData),
+    chunk('IEND', Buffer.alloc(0)),
   ]);
-  return [{ name: 'gif', bytes: gif }, { name: 'webp', bytes: webp }, { name: 'apng', bytes: apng }];
+  return [
+    { name: 'gif', bytes: gif },
+    { name: 'webp', bytes: webp },
+    { name: 'apng', bytes: apng },
+  ];
 }

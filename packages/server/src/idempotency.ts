@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { and, eq, lte, sql } from 'drizzle-orm';
-import type { Database } from './index.js';
 import { idempotencyKeys } from './db/schema.js';
 import { DomainError } from './errors.js';
+import type { Database } from './index.js';
 
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -10,7 +10,9 @@ export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 export function hashInput(value: unknown): string {
   const serialized = JSON.stringify(value, (_key, current: unknown) => {
     if (current !== null && typeof current === 'object' && !Array.isArray(current)) {
-      return Object.fromEntries(Object.entries(current).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+      return Object.fromEntries(
+        Object.entries(current).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+      );
     }
     return current;
   });
@@ -20,11 +22,17 @@ export function hashInput(value: unknown): string {
 
 export async function withIdempotency<T>(
   db: Database,
-  options: { userId: string; operation: string; key: string; requestHash: string; statusCode: number },
+  options: {
+    userId: string;
+    operation: string;
+    key: string;
+    requestHash: string;
+    statusCode: number;
+  },
   validate: (value: unknown) => value is T,
   action: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
-  return db.transaction(async tx => {
+  return db.transaction(async (tx) => {
     // This transaction lock also serializes the not-yet-inserted key; hash collisions only
     // serialize unrelated requests and never change which composite key is read/written.
     const scope = JSON.stringify([options.userId, options.operation, options.key]);
@@ -34,11 +42,17 @@ export async function withIdempotency<T>(
       eq(idempotencyKeys.operation, options.operation),
       eq(idempotencyKeys.key, options.key),
     );
-    await tx.delete(idempotencyKeys).where(and(predicate, lte(idempotencyKeys.expiresAt, sql`now()`)));
+    await tx
+      .delete(idempotencyKeys)
+      .where(and(predicate, lte(idempotencyKeys.expiresAt, sql`now()`)));
     const [existing] = await tx.select().from(idempotencyKeys).where(predicate).limit(1);
     if (existing) {
       if (existing.requestHash !== options.requestHash) {
-        throw new DomainError(409, 'IDEMPOTENCY_CONFLICT', '该提交标识已用于不同的内容，请重新提交。');
+        throw new DomainError(
+          409,
+          'IDEMPOTENCY_CONFLICT',
+          '该提交标识已用于不同的内容，请重新提交。',
+        );
       }
       const response = existing.response;
       if (existing.httpStatus !== options.statusCode || !validate(response)) {

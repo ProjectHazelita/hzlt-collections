@@ -1,6 +1,6 @@
-import type { FastifyError, FastifyInstance, FastifyRequest } from 'fastify';
 import type { ErrorResponse } from '@hcl/contracts';
 import { DomainError } from '@hcl/server';
+import type { FastifyError, FastifyInstance, FastifyRequest } from 'fastify';
 
 /** Never serialize arbitrary exception messages, database diagnostics or request bodies. */
 export function installErrors(app: FastifyInstance): void {
@@ -31,7 +31,8 @@ export function installErrors(app: FastifyInstance): void {
       for (const issue of error.validation) {
         const property = issue.params?.missingProperty;
         const location = issue.instancePath || error.validationContext || 'request';
-        fields[typeof property === 'string' ? `${location}/${property}` : location] = 'Invalid value.';
+        fields[typeof property === 'string' ? `${location}/${property}` : location] =
+          'Invalid value.';
       }
     } else if (error.statusCode === 429) {
       statusCode = 429;
@@ -49,17 +50,28 @@ export function installErrors(app: FastifyInstance): void {
 
     if (statusCode >= 500) {
       // Exception messages/stacks may contain SQL parameters or filesystem paths.
-      request.log.error({ requestId: request.id, errorName: error.name, errorCode: error.code }, 'Request failed');
+      request.log.error(
+        { requestId: request.id, errorName: error.name, errorCode: error.code },
+        'Request failed',
+      );
       code = 'INTERNAL_ERROR';
       message = 'An unexpected error occurred.';
       fields = undefined;
     }
 
-    const response: ErrorResponse = { error: { code, message, requestId: request.id, ...(fields ? { fields } : {}) } };
+    const response: ErrorResponse = {
+      error: { code, message, requestId: request.id, ...(fields ? { fields } : {}) },
+    };
     return reply.code(statusCode).send(response);
   });
 
-  app.setNotFoundHandler((request, reply) => reply.code(404).send({
-    error: { code: 'NOT_FOUND', message: 'The requested resource was not found.', requestId: request.id },
-  } satisfies ErrorResponse));
+  app.setNotFoundHandler((request, reply) =>
+    reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'The requested resource was not found.',
+        requestId: request.id,
+      },
+    } satisfies ErrorResponse),
+  );
 }
