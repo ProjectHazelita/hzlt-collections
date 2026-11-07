@@ -1,8 +1,10 @@
 import Fastify from 'fastify';
+import swagger from '@fastify/swagger';
 import { HealthResponseSchema } from '@hcl/contracts';
 import { DomainError, sql, type Config, type Database, type createQueue, type LocalStorage } from '@hcl/server';
 import { installAuth } from './auth.js';
 import { installErrors } from './errors.js';
+import { installEntries } from './entries.js';
 
 export async function buildApp({ db, boss, storage, config, serveWeb = false }: {
   db: Database;
@@ -19,11 +21,19 @@ export async function buildApp({ db, boss, storage, config, serveWeb = false }: 
     ajv: { customOptions: { removeAdditional: false } },
   });
   installErrors(app);
+  await app.register(swagger, {
+    openapi: {
+      info: { title: 'hzlt!Collections API', version: '0.1.0-dev.0' },
+      servers: [{ url: config.publicOrigin }],
+    },
+  });
   await installAuth(app, { db, config });
+  await installEntries(app, { db, boss });
   app.get('/api/v1/health', { schema: { response: { 200: HealthResponseSchema } } }, async () => {
     await db.execute(sql`select 1`);
     if (!await boss.getQueue('asset-process')) throw new DomainError(503, 'INTERNAL_ERROR', 'Service unavailable.');
     return { status: 'ok' };
   });
+  app.get('/api/v1/openapi.json', async () => app.swagger());
   return app;
 }
