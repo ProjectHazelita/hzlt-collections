@@ -49,7 +49,7 @@ export function EntryIdentity({
         title="复制条目链接"
         onClick={() => void copy()}
       >
-        {copied ? <Check size={card ? 16 : 14} /> : <Copy size={card ? 16 : 14} />}
+        {copied ? <Check size={card ? 20 : 14} /> : <Copy size={card ? 20 : 14} />}
         {!card && <span>{copied ? '链接已复制' : '复制条目链接'}</span>}
       </button>
       {fallback && (

@@ -384,13 +384,13 @@ h2 {
   flex-direction: column;
   justify-content: flex-end;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   padding: 8px;
   background: linear-gradient(to bottom, #ffffff00 0%, #6666664d 32.69%, #000000cc 100%);
 }
 .card-overlay-title {
-  font-size: 10px;
-  line-height: 14px;
+  font-size: 14px;
+  line-height: 17px;
   color: #fff;
   overflow-wrap: anywhere;
 }
@@ -404,8 +404,8 @@ h2 {
   border-radius: 4px;
   background: var(--bg-page);
   color: var(--text-primary);
-  font-size: 6px;
-  line-height: 7px;
+  font-size: 10px;
+  line-height: 12px;
 }
 .text-card-content {
   display: flex;
@@ -439,7 +439,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  height: 16px;
+  height: 20px;
   padding: 0 4px;
 }
 
@@ -467,15 +467,15 @@ h2 {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 10px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--text-primary);
 }
 .author .avatar {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
-  font-size: 9px;
+  font-size: 10px;
 }
 .author > span:last-child {
   overflow: hidden;
@@ -509,7 +509,7 @@ h2 {
   background: var(--bg-subtle);
 }
 .entry-identity-card .entry-copy {
-  height: 16px;
+  height: 20px;
   padding: 0;
   border-radius: 4px;
 }

@@ -146,7 +146,7 @@ export function MasonryFeed({ entries }: { entries: Entry[] }) {
     const column = heights.indexOf(Math.min(...heights));
     columns[column]!.push(entry);
     const estimated = entry.asset
-      ? columnWidth * Math.min(entry.asset.height / entry.asset.width, 2.5) + 56
+      ? columnWidth * Math.min(entry.asset.height / entry.asset.width, 2.5) + 60
       : Math.min(8, Math.ceil(entry.body.length / Math.max(8, columnWidth / 7))) * 22 + 88;
     heights[column]! += (measurements.current.get(entry.id) ?? estimated) + 16;
   }
