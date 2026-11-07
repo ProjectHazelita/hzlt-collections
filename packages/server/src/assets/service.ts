@@ -1,13 +1,13 @@
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { fromDrizzle, type PgBoss } from 'pg-boss';
 import { Value } from 'typebox/value';
 import {
-  UploadAcceptedSchema, UploadStatusSchema,
+  ImageFormatSchema, UploadAcceptedSchema, UploadStatusSchema,
   type ImageFormat, type UploadAccepted, type UploadStatus,
 } from '@hcl/contracts';
 import type { Database } from '../index.js';
 import type { LocalStorage } from '../storage/local-storage.js';
-import { assets } from '../db/schema.js';
+import { assets, entries } from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import { withIdempotency } from '../idempotency.js';
 
@@ -57,6 +57,18 @@ export class AssetService {
       }
       await this.storage.remove(input.temporaryKey);
     }
+  }
+
+  async published(id: string) {
+    const [asset] = await this.db.select({
+      entryId: entries.id, originalKey: assets.originalKey,
+      thumbnailKey: assets.thumbnailKey, format: assets.format,
+    }).from(assets).innerJoin(entries, eq(entries.assetId, assets.id))
+      .where(and(eq(assets.id, id), eq(assets.state, 'ready'), isNull(entries.deletedAt))).limit(1);
+    if (!asset || !asset.thumbnailKey || !Value.Check(ImageFormatSchema, asset.format)) {
+      throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
+    }
+    return { ...asset, thumbnailKey: asset.thumbnailKey, format: asset.format };
   }
 
   async get(id: string, userId: string): Promise<UploadStatus> {

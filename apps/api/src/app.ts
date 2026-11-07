@@ -6,6 +6,7 @@ import { installAuth } from './auth.js';
 import { installErrors } from './errors.js';
 import { installEntries } from './entries.js';
 import { installUploads } from './uploads.js';
+import { installMedia } from './media.js';
 
 export async function buildApp({ db, boss, storage, config, serveWeb = false }: {
   db: Database;
@@ -31,6 +32,7 @@ export async function buildApp({ db, boss, storage, config, serveWeb = false }: 
   await installAuth(app, { db, config });
   await installEntries(app, { db, boss });
   await installUploads(app, { db, boss, storage, config });
+  await installMedia(app, { db, boss, storage });
   app.get('/api/v1/health', { schema: { response: { 200: HealthResponseSchema } } }, async () => {
     await db.execute(sql`select 1`);
     if (!await boss.getQueue('asset-process')) throw new DomainError(503, 'INTERNAL_ERROR', 'Service unavailable.');
