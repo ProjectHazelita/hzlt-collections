@@ -455,9 +455,17 @@ function ComposerForm({ id }: { id: string | undefined }) {
       <form className="composer-workspace" onSubmit={submit}>
         <header className="composer-header">
           <div className="composer-heading">
-            <Link to={id ? `/entries/${id}` : '/'} className="composer-back" aria-label="返回">
+            <button
+              type="button"
+              className="composer-back"
+              aria-label="返回"
+              onClick={() => {
+                if (location.key !== 'default') navigate(-1);
+                else navigate(id ? `/entries/${id}` : '/');
+              }}
+            >
               <ArrowLeft size={20} />
-            </Link>
+            </button>
             <h1>{id ? '编辑条目' : '发布条目'}</h1>
           </div>
           <button className="primary composer-publish" type="submit" disabled={!valid || saving}>
