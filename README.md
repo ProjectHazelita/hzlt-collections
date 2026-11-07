@@ -22,3 +22,17 @@ docker compose -f compose.dev.yaml exec -T api pnpm --filter @hcl/contracts --fi
 ```
 
 数据库和私有媒体使用独立命名卷。不要对已有数据运行 `down -v`；停止开发服务使用 `docker compose -f compose.dev.yaml down`。媒体根目录不得作为静态目录公开。
+
+## 身份与请求安全
+
+开放注册；第一个成功提交注册事务的用户成为唯一 owner，后续注册者为 member。首次注册完成前不要向不可信网络暴露实例。用户名按 NFKC 和小写键去重；密码为 12–128 个字符，不移除空格，以 Argon2id 保存。
+
+`GET /api/v1/auth/session` 返回当前用户和绑定 Session 的 CSRF token。注册、登录、退出及其他写操作必须同时携带精确匹配 `PUBLIC_ORIGIN` 的 `Origin` 与 `X-CSRF-Token`，浏览器须保留 `hzlt.sid` Cookie。服务端 Session 保存在 PostgreSQL，登录重新生成 generation，退出删除记录；CAS 拒绝退出之后的迟到保存。登录绝对有效期默认 7 天，匿名 CSRF Session 为 1 小时，读取不会续期。
+
+HTTPS 部署将 `PUBLIC_ORIGIN` 设为准确的 HTTPS origin，反向代理地址通过 `TRUST_PROXY` 显式列出，不使用 `true` 信任任意代理。注册和登录按 IP 限流，不信任未配置代理传来的客户端地址。
+
+```sh
+pnpm test:integration
+```
+
+集成验收只接受独立的 `hcl_test` 数据库，并会清理该测试库中的应用数据；不会重置正常的 `hcl` 库。认证回归使用真实 PostgreSQL、真实密码运算及本地 HTTP 连接，覆盖并发首任 owner、用户名冲突、旧 Cookie、过期、跨 Origin、CSRF、限流、HTTPS Cookie，以及退出后的迟到 Session 保存。
