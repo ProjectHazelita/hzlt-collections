@@ -8,7 +8,7 @@ import type {
 } from '@hcl/contracts';
 import { ArrowLeft, ImagePlus, Plus, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { Link, type Location, useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError, errorMessage, isCancelled, queryClient, useAuth } from '../../app/api';
 import './composer.css';
 
@@ -395,7 +395,15 @@ function ComposerForm({ id }: { id: string | undefined }) {
       if (!current()) return;
       await queryClient.invalidateQueries();
       if (!current()) return;
-      navigate(`/entries/${saved.id}`, { state: { backgroundLocation: location } });
+      const home: Location = { pathname: '/', search: '', hash: '', state: null, key: 'home' };
+      if (id && location.key !== 'default') {
+        // Editing returns to the view that opened the editor, usually the entry modal over its feed.
+        navigate(-1);
+      } else {
+        // Publishing replaces the form with the feed, then opens the new entry over it.
+        navigate('/', { replace: true });
+        navigate(`/entries/${saved.id}`, { state: { backgroundLocation: home } });
+      }
     } catch (cause) {
       if (current() && !isCancelled(cause)) {
         setSubmitError(errorMessage(cause));
