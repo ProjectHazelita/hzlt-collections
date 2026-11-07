@@ -2,7 +2,7 @@
   "name": "@hcl/web",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "NODE_ENV=production vite build",
     "typecheck": "tsc"
   },
   "dependencies": {

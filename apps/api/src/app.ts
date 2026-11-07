@@ -7,6 +7,7 @@ import { installErrors } from './errors.js';
 import { installEntries } from './entries.js';
 import { installUploads } from './uploads.js';
 import { installMedia } from './media.js';
+import { installWeb } from './web.js';
 
 export async function buildApp({ db, boss, storage, config, serveWeb = false }: {
   db: Database;
@@ -14,7 +15,7 @@ export async function buildApp({ db, boss, storage, config, serveWeb = false }: 
   storage: LocalStorage;
   config: Config;
   serveWeb?: boolean;
-}) {
+}, webOptions?: { root: string }) {
   const app = Fastify({
     logger: { redact: ['req.headers.cookie', 'req.headers.x-csrf-token', 'req.body.password'] },
     trustProxy: config.trustProxy,
@@ -45,5 +46,6 @@ export async function buildApp({ db, boss, storage, config, serveWeb = false }: 
     if (operation) operation.requestBody = UploadRequestBodyDocumentation;
     return document;
   });
+  if (serveWeb) await installWeb(app, webOptions?.root);
   return app;
 }

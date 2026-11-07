@@ -78,3 +78,69 @@ Worker 使用独立 OS 子进程完整解码、按 EXIF 方向旋转并生成不
 客户端将身份版本保存在 ref 中，在读取响应、解析及写入缓存前检查版本；退出或 401 会取消请求并清除含个性化权限与喜欢状态的全部条目缓存。迟到的真实成功响应不能恢复已退出用户的喜欢或管理视图。复制链接优先使用 Clipboard API，HTTP 局域网环境尝试实际的兼容复制，失败则显示可手动选择的完整链接。
 
 开发 Worker 直接使用 Node watch，避免 pnpm/tsx watch 的多层常驻进程；构建器限制 `GOMAXPROCS=2`，以在不放宽 64 PID 限制的前提下为原生媒体子进程留出空间。生产媒体子进程不加载开发构建器，也不接收数据库或 Session 环境变量。
+
+## 生产部署
+
+```sh
+pnpm setup:env
+PRODUCTION_ORIGIN=http://127.0.0.1:18080 docker compose up --build -d
+curl -f http://127.0.0.1:18080/api/v1/health
+```
+
+生产镜像使用 Node 24 多阶段构建，API 同时提供编译后的界面、JSON API 与受权限边界控制的媒体；无须另起 Vite、Redis 或 nginx 容器。数据库不发布宿主端口；HTTP 默认仅绑定 `127.0.0.1:18080`，可用 `HTTP_PORT` 调整。migrate 成功后才启动 API/Worker。运行账号为非 root 的 `node`，移除全部 Linux capabilities，不挂 Docker socket；生产 Worker 同样限制为 1 GiB / 2 CPU / 64 PID。
+
+Compose 使用 `PRODUCTION_ORIGIN` 设置容器内的 `PUBLIC_ORIGIN`，默认是上述本地 HTTP origin。公网部署应由已有 TLS 反代提供 HTTPS，将 `PRODUCTION_ORIGIN` 与对外 `PUBLIC_ORIGIN` 都设为同一个准确的 HTTPS origin，并把 `TRUST_PROXY` 设为实际可信代理地址；不能使用 `true` 或依赖任意转发头。变更配置后重新创建容器。不要在首次 owner 注册前向不可信网络开放入口。
+
+界面直达只覆盖 `/`、`/search`、`/likes`、`/publish`、`/login`、`/register`、`/settings/content`、`/entries/:id` 和 `/entries/:id/edit` 的 HTML GET/HEAD 请求。构建资源仅从 web dist 的已知普通文件提供；未知 API、媒体、路径、目录、点文件、源码及路径穿越不会回退为 HTML。HTML 不缓存，带内容哈希的构建资源可长期缓存；原图和缩略图仍逐请求检查发布状态且不缓存。
+
+查看状态与日志：
+
+```sh
+docker compose ps
+docker compose logs --since 10m api worker migrate
+```
+
+### 一致备份与恢复
+
+数据库包含账号、Session、条目和队列；媒体卷包含原图与派生文件。只备份其中一个不能恢复完整站点。备份包含密码哈希、会话和原图元数据，应限制访问并加密保存；另行安全保存 `.env` 中的秘密，不把它放入公开仓库。
+
+在同一个生产项目、同一套 Compose 环境变量下执行；暂停 API/Worker，等待其优雅退出后，再同时备份数据库和媒体，保持两者一致：
+
+```sh
+set -eu
+umask 077
+backup="backup-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir "$backup"
+docker compose stop api worker
+trap 'docker compose start api worker' EXIT
+docker compose exec -T db pg_dump -U hcl -d hcl -Fc > "$backup/database.dump"
+docker compose run --rm --no-deps --entrypoint tar api \
+  -C /var/lib/hcl/media -czf - . > "$backup/media.tar.gz"
+docker compose start api worker
+trap - EXIT
+```
+
+恢复时先使用**新的空项目和空卷**、相同数据库凭据与 Session secret，以及匹配的应用版本；仅启动 db，等其健康后，用 `pg_restore -U hcl -d hcl` 导入数据库，用同一 API 镜像的 `tar -xzf - -C /var/lib/hcl/media` 导入媒体（通过 `docker compose exec -T db` / `docker compose run --rm --no-deps --entrypoint tar api` 传入备份）。然后正常 `docker compose up -d` 执行迁移并启动服务，检查健康、账号、条目及原图哈希后再切流。不要对正在使用的数据库直接覆盖恢复，不要删除旧卷来“修复”启动失败。
+
+## 可重复验收
+
+```sh
+pnpm typecheck
+pnpm build
+pnpm test:integration
+```
+
+集成测试使用真实 PostgreSQL、HTTP、队列与原生解码子进程，测试库固定为隔离的 `hcl_test`。生产静态边界也通过真实 HTTP 验证，不以 SPA 兜底隐藏错误。
+
+完整 HTTP smoke 使用另一个空实例和独立运行的 API/Worker。每次选一个新的后缀；下面两条命令必须复用同一次生成的环境：
+
+```sh
+export COMPOSE_PROJECT_NAME="hcl-proof-api-$(date -u +%Y%m%d%H%M%S)"
+export WEB_PORT=15173 API_HOST_PORT=13000 DEV_DB_PORT=55433
+export PUBLIC_ORIGIN=http://127.0.0.1:15173
+pnpm dev
+pnpm smoke:api
+docker compose -f compose.dev.yaml stop
+```
+
+端口被其他服务占用时换端口并同步 origin，不终止其他项目。脚本在任何 HTTP 写入前核实项目名前缀、实际数据库名及 users/entries 为空，拒绝非空库，不自动重置。成功时输出 `SMOKE_API_OK`，覆盖真实身份权限、CRUD、字面量搜索、喜欢、五组静态/EXIF 图片、原图 SHA256、缩略图解码、八类失败输入和删除撤销公开访问；Worker 崩溃恢复、硬超时及 Session CAS 竞态由集成测试单独覆盖。浏览器交互、视觉与生产重启持久化仍需在各自隔离实例实际验收。
