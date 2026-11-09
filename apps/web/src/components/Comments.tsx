@@ -4,6 +4,7 @@ import { MessageCircle, SendHorizontal, X } from 'lucide-react';
 import { type FormEvent, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { errorMessage, isCancelled, queryClient, useAuth } from '../app/api';
+import { UserAvatar } from './UserAvatar';
 
 function CommentRow({
   comment,
@@ -17,12 +18,12 @@ function CommentRow({
   const { user } = useAuth();
   return (
     <div className={fresh ? 'comment-row comment-new' : 'comment-row'}>
-      <span className="avatar comment-avatar">{Array.from(comment.author.username)[0]}</span>
+      <UserAvatar user={comment.author} className="avatar comment-avatar" />
       <div className="comment-content">
         <div className="comment-attribution">
-          <span className="comment-name">{comment.author.username}</span>
+          <span className="comment-name">{comment.author.displayName}</span>
           {comment.replyTo && (
-            <span className="comment-reply-to">回复 {comment.replyTo.username}</span>
+            <span className="comment-reply-to">回复 {comment.replyTo.displayName}</span>
           )}
           <span className="comment-spacer" />
           {user && (
@@ -126,11 +127,11 @@ export function Comments({ entryId }: { entryId: string }) {
       )}
       {user ? (
         <form className="comment-composer" onSubmit={submit}>
-          <span className="avatar comment-composer-avatar">{Array.from(user.username)[0]}</span>
+          <UserAvatar user={user} className="avatar comment-composer-avatar" />
           <div className="comment-input">
             {replyTo && (
               <span className="comment-target">
-                回复 {replyTo.author.username}
+                回复 {replyTo.author.displayName}
                 <button
                   type="button"
                   aria-label="取消回复"
@@ -147,7 +148,7 @@ export function Comments({ entryId }: { entryId: string }) {
               ref={input}
               value={body}
               maxLength={1000}
-              placeholder={replyTo ? `回复 ${replyTo.author.username}…` : '说点什么…'}
+              placeholder={replyTo ? `回复 ${replyTo.author.displayName}…` : '说点什么…'}
               aria-label="评论内容"
               onChange={(event) => setBody(event.target.value)}
             />

@@ -13,11 +13,14 @@ import {
   useSearchParams,
 } from 'react-router';
 import logo from '../assets/logo.svg';
+import { UserAvatar } from '../components/UserAvatar';
 import { ContentManagement } from '../features/admin/ContentManagement';
 import { AuthForm } from '../features/auth/AuthForm';
 import { EntryComposer } from '../features/composer/EntryComposer';
 import { EntryDetail } from '../features/EntryDetail';
 import { FeedPage } from '../features/FeedPage';
+import { SettingsLayout } from '../features/settings/SettingsLayout';
+import { SettingsProfile } from '../features/settings/SettingsProfile';
 import { errorMessage, useAuth } from './api';
 
 function SearchBar() {
@@ -120,14 +123,22 @@ function AccountArea() {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        {Array.from(user.username)[0]}
+        <UserAvatar user={user} className="account-avatar-inner" />
       </button>
       {open && (
         <div className="account-menu" role="menu" aria-label="账号">
-          <p className="account-name">
-            {user.username} · {user.role}
+          <p className="account-name">{user.displayName}</p>
+          <p className="account-role">
+            @{user.username} · {user.role === 'owner' ? '站点所有者' : '注册用户'}
           </p>
-          <p className="account-role">{user.role === 'owner' ? '站点所有者' : '注册用户'}</p>
+          <Link
+            className="menu-button"
+            role="menuitem"
+            to="/settings/profile"
+            onClick={() => setOpen(false)}
+          >
+            个人设置
+          </Link>
           <Link
             className="menu-button"
             role="menuitem"
@@ -167,7 +178,6 @@ function AccountArea() {
 }
 
 function Navigation() {
-  const { user } = useAuth();
   return (
     <nav className="navigation" aria-label="主导航">
       <div className="navigation-top">
@@ -185,15 +195,9 @@ function Navigation() {
         </NavLink>
       </div>
       <div className="navigation-bottom">
-        {user?.role === 'owner' ? (
-          <NavLink to="/settings/content" aria-label="站点管理">
-            <Settings size={30} />
-          </NavLink>
-        ) : (
-          <span className="navigation-idle" title="站点管理">
-            <Settings size={30} />
-          </span>
-        )}
+        <NavLink to="/settings" aria-label="设置">
+          <Settings size={30} />
+        </NavLink>
       </div>
     </nav>
   );
@@ -222,7 +226,7 @@ function AppShell() {
   );
 }
 
-function RequireUser({ owner = false }: { owner?: boolean }) {
+function RequireUser() {
   const { user, loading, error, refresh } = useAuth();
   const location = useLocation();
   if (loading)
@@ -249,14 +253,13 @@ function RequireUser({ owner = false }: { owner?: boolean }) {
         to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
       />
     );
-  if (owner && user.role !== 'owner')
-    return (
-      <div className="request-state">
-        <h1>无权访问</h1>
-        <Link to="/">返回首页</Link>
-      </div>
-    );
   return <Outlet />;
+}
+
+function OwnerSettings() {
+  const { user } = useAuth();
+  if (user?.role !== 'owner') return <Navigate replace to="/settings/profile" />;
+  return <ContentManagement />;
 }
 
 export function App() {
@@ -273,9 +276,11 @@ export function App() {
             <Route path="likes" element={<FeedPage kind="likes" />} />
             <Route path="publish" element={<EntryComposer />} />
             <Route path="entries/:id/edit" element={<EntryComposer />} />
-          </Route>
-          <Route element={<RequireUser owner />}>
-            <Route path="settings/content" element={<ContentManagement />} />
+            <Route path="settings" element={<SettingsLayout />}>
+              <Route index element={<Navigate replace to="profile" />} />
+              <Route path="profile" element={<SettingsProfile />} />
+              <Route path="content" element={<OwnerSettings />} />
+            </Route>
           </Route>
           <Route
             path="*"

@@ -151,8 +151,8 @@ export function ContentManagement() {
                     </div>
                   </td>
                   <td>
-                    <span className="management-author" title={entry.author.username}>
-                      {entry.author.username}
+                    <span className="management-author" title={`@${entry.author.username}`}>
+                      {entry.author.displayName}
                     </span>
                   </td>
                   <td>

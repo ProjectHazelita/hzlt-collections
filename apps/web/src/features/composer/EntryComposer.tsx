@@ -11,19 +11,13 @@ import { ArrowLeft, FileText, Link2, Plus, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, type Location, useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError, errorMessage, isCancelled, queryClient, useAuth } from '../../app/api';
+import { uuid } from '../../app/uuid';
 import './composer.css';
 
 const MAX_IMAGES = 20;
 const MAX_FILES = 5;
 const MAX_LINKS = 5;
 
-function uuid(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6]! & 15) | 64;
-  bytes[8] = (bytes[8]! & 63) | 128;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
 const length = (value: string) => Array.from(value).length;
 const tagKey = (value: string) => value.trim().normalize('NFKC').toLowerCase();
 const imageErrors: Record<string, string> = {

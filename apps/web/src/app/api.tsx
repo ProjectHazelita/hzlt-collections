@@ -52,6 +52,7 @@ interface AuthContextValue {
   authenticate: (kind: 'login' | 'register', input: AuthInput) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  applySession: (session: Session) => void;
 }
 const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -148,6 +149,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
     await refresh();
   }, [request, changeIdentity, refresh]);
+  const applySession = useCallback(
+    (next: Session) => {
+      changeIdentity(next);
+      setLoading(false);
+    },
+    [changeIdentity],
+  );
   return (
     <QueryClientProvider client={queryClient}>
       <AuthContext.Provider
@@ -160,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           authenticate,
           logout,
           refresh,
+          applySession,
         }}
       >
         {children}

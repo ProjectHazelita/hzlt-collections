@@ -3,6 +3,7 @@ import { FileText, Link2, MoreHorizontal } from 'lucide-react';
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { copyText } from '../app/clipboard';
+import { UserAvatar } from './UserAvatar';
 
 export function AttributeBadges({
   entry,
@@ -30,8 +31,8 @@ export function AttributeBadges({
 export function Author({ entry, detail = false }: { entry: Entry; detail?: boolean }) {
   return (
     <span className={detail ? 'author author-detail' : 'author'}>
-      <span className="avatar">{Array.from(entry.author.username)[0]}</span>
-      <span>{entry.author.username}</span>
+      <UserAvatar user={entry.author} />
+      <span>{entry.author.displayName}</span>
     </span>
   );
 }
@@ -91,12 +92,7 @@ function CardMenu({ entry }: { entry: Entry }) {
             {copied ? '链接已复制' : '复制条目链接'}
           </button>
           {entry.canEdit && (
-            <Link
-              role="menuitem"
-              to={`/entries/${entry.id}/edit`}
-              state={{ backgroundLocation: location }}
-              onClick={() => setOpen(false)}
-            >
+            <Link role="menuitem" to={`/entries/${entry.id}/edit`} onClick={() => setOpen(false)}>
               编辑条目
             </Link>
           )}

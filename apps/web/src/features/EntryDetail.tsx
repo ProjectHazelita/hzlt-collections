@@ -10,6 +10,7 @@ import { ConfirmDeleteDialog } from '../components/ConfirmDeleteDialog';
 import { EntryActions } from '../components/EntryActions';
 import { EntryIdentity } from '../components/EntryIdentity';
 import { AttributeBadges } from '../components/MasonryFeed';
+import { UserAvatar } from '../components/UserAvatar';
 
 function dateLine(iso: string) {
   const date = new Date(iso);
@@ -25,9 +26,9 @@ function fileSize(bytes: number) {
 function Creator({ entry }: { entry: Entry }) {
   return (
     <span className="creator">
-      <span className="avatar avatar-large">{Array.from(entry.author.username)[0]}</span>
+      <UserAvatar user={entry.author} className="avatar avatar-large" />
       <span className="creator-identity">
-        <span className="creator-name">{entry.author.username}</span>
+        <span className="creator-name">{entry.author.displayName}</span>
         <span className="creator-role">
           {entry.author.role === 'owner' ? '站点所有者' : '注册用户'}
         </span>

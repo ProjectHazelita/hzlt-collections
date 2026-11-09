@@ -11,6 +11,7 @@
   --border-subtle: #e6e9ef;
   --action-primary: #8839ef;
   --feedback-error: #d20f39;
+  --feedback-success: #40a02b;
   --accent: rgb(136 57 239 / 10%);
   --dialog-shadow: 0 24px 47.6px #4c4f6929, 0 2px 6.8px #4c4f690f;
 }
@@ -143,6 +144,19 @@ h2 {
   width: 40px;
   height: 40px;
   font-size: 16px;
+}
+.avatar-image {
+  object-fit: cover;
+}
+.account-avatar-inner {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* Shell */
@@ -287,40 +301,48 @@ h2 {
 }
 .account-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 8px);
   right: 0;
   width: 256px;
-  padding: 16px;
+  padding: 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--bg-page);
+  box-shadow: var(--dialog-shadow);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
   z-index: 6;
+  transform-origin: top right;
+  animation: pop-in 160ms ease both;
 }
 .account-name {
+  padding: 8px 10px 2px;
   font-size: 14px;
   line-height: 22px;
+  font-weight: 500;
 }
 .account-role {
+  padding: 0 10px 6px;
   font-size: 12px;
-  line-height: 19px;
+  line-height: 18px;
   color: var(--text-secondary);
 }
 .menu-button {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
-  height: 40px;
+  height: 36px;
+  padding: 0 10px;
   border-radius: 8px;
-  background: var(--bg-subtle);
-  font-size: 14px;
-  line-height: 22px;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  transition: background-color 140ms ease;
 }
 .menu-button:hover {
-  background: #e6e9ef;
+  background: var(--bg-subtle);
 }
 
 /* Feed */
@@ -1011,14 +1033,17 @@ h2 {
   right: 0;
   bottom: calc(100% + 8px);
   width: 224px;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--bg-page);
+  box-shadow: var(--dialog-shadow);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   z-index: 7;
+  transform-origin: bottom right;
+  animation: pop-up 160ms ease both;
 }
 .detail-status {
   padding: 32px;
@@ -1285,6 +1310,18 @@ h2 {
 .entry-dialog::backdrop,
 .delete-dialog::backdrop {
   animation: backdrop-in 220ms ease both;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes pop-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
 }
 .card-menu,
 .composer-tag-picker {
