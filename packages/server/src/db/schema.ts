@@ -47,6 +47,7 @@ export const assets = pgTable(
     ownerId: uuid('owner_id')
       .notNull()
       .references(() => users.id),
+    kind: text('kind').$type<'image' | 'file'>().notNull().default('image'),
     state: text('state').$type<'pending' | 'ready' | 'failed' | 'deleted'>().notNull(),
     originalKey: text('original_key').notNull(),
     thumbnailKey: text('thumbnail_key'),
@@ -54,6 +55,8 @@ export const assets = pgTable(
     sha256: text('sha256').notNull(),
     bytes: bigint('bytes', { mode: 'bigint' }).notNull(),
     format: text('format'),
+    mime: text('mime'),
+    extension: text('extension'),
     originalWidth: integer('original_width'),
     originalHeight: integer('original_height'),
     width: integer('width'),
@@ -65,27 +68,67 @@ export const assets = pgTable(
     readyAt: time('ready_at'),
     expiresAt: time('expires_at'),
   },
-  (t) => [check('asset_state', sql`${t.state} in ('pending','ready','failed','deleted')`)],
+  (t) => [
+    check('asset_state', sql`${t.state} in ('pending','ready','failed','deleted')`),
+    check('asset_kind', sql`${t.kind} in ('image','file')`),
+  ],
 );
-export const entries = pgTable(
-  'entries',
+export const entries = pgTable('entries', {
+  id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+  authorId: uuid('author_id')
+    .notNull()
+    .references(() => users.id),
+  title: text('title'),
+  body: text('body').notNull(),
+  nsfw: boolean('nsfw').notNull().default(false),
+  aiGenerated: boolean('ai_generated').notNull().default(false),
+  createdAt: time('created_at').notNull().defaultNow(),
+  updatedAt: time('updated_at').notNull().defaultNow(),
+  deletedAt: time('deleted_at'),
+});
+export const entryAttachments = pgTable(
+  'entry_attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entryId: bigint('entry_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => entries.id),
+    kind: text('kind').$type<'image' | 'file' | 'link'>().notNull(),
+    assetId: uuid('asset_id').references(() => assets.id),
+    url: text('url'),
+    position: integer('position').notNull(),
+    createdAt: time('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('entry_attachment_position').on(t.entryId, t.position),
+    uniqueIndex('entry_attachment_asset').on(t.assetId),
+    index('entry_attachment_entry').on(t.entryId, t.kind, t.position),
+    check('attachment_kind', sql`${t.kind} in ('image','file','link')`),
+    check(
+      'attachment_target',
+      sql`(${t.kind} in ('image','file') and ${t.assetId} is not null and ${t.url} is null)
+        or (${t.kind} = 'link' and ${t.assetId} is null and ${t.url} is not null)`,
+    ),
+  ],
+);
+export const comments = pgTable(
+  'comments',
   {
     id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    entryId: bigint('entry_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => entries.id),
     authorId: uuid('author_id')
       .notNull()
       .references(() => users.id),
-    title: text('title'),
+    parentId: bigint('parent_id', { mode: 'bigint' }),
     body: text('body').notNull(),
-    assetId: uuid('asset_id')
-      .unique()
-      .references(() => assets.id),
-    nsfw: boolean('nsfw').notNull().default(false),
-    aiGenerated: boolean('ai_generated').notNull().default(false),
     createdAt: time('created_at').notNull().defaultNow(),
-    updatedAt: time('updated_at').notNull().defaultNow(),
-    deletedAt: time('deleted_at'),
   },
-  (t) => [check('entry_content', sql`length(btrim(${t.body})) > 0 OR ${t.assetId} IS NOT NULL`)],
+  (t) => [
+    index('comments_entry').on(t.entryId, t.createdAt, t.id),
+    index('comments_parent').on(t.parentId),
+  ],
 );
 export const tags = pgTable('tags', {
   id: uuid('id').primaryKey().defaultRandom(),

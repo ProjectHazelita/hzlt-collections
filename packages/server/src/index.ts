@@ -12,6 +12,7 @@ export type Database = ReturnType<typeof createDatabase>['db'];
 export { AssetService } from './assets/service.js';
 export { AuthService } from './auth/service.js';
 export { PostgresSessionStore } from './auth/session-store.js';
+export { CommentService } from './comments/service.js';
 export { EntryService } from './entries/service.js';
 export function createDatabase(connectionString: string) {
   const pool = new pg.Pool({ connectionString });

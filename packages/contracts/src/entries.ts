@@ -1,6 +1,10 @@
 import { type Static, Type } from 'typebox';
 import { EntryIdSchema, TimestampSchema, UserSchema, UuidSchema } from './primitives.js';
 
+export const MAX_ENTRY_IMAGES = 20;
+export const MAX_ENTRY_FILES = 5;
+export const MAX_ENTRY_LINKS = 5;
+
 export const ImageFormatSchema = Type.Union([
   Type.Literal('jpeg'),
   Type.Literal('png'),
@@ -9,9 +13,10 @@ export const ImageFormatSchema = Type.Union([
 ]);
 export type ImageFormat = Static<typeof ImageFormatSchema>;
 
-export const AssetSchema = Type.Object(
+export const ImageAssetSchema = Type.Object(
   {
     id: UuidSchema,
+    name: Type.String({ maxLength: 255 }),
     format: ImageFormatSchema,
     bytes: Type.Integer({ minimum: 1 }),
     originalWidth: Type.Integer({ minimum: 1 }),
@@ -24,7 +29,39 @@ export const AssetSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type Asset = Static<typeof AssetSchema>;
+export type ImageAsset = Static<typeof ImageAssetSchema>;
+
+export const FileAssetSchema = Type.Object(
+  {
+    id: UuidSchema,
+    name: Type.String({ maxLength: 255 }),
+    bytes: Type.Integer({ minimum: 1 }),
+    extension: Type.String({ maxLength: 16 }),
+    downloadUrl: Type.String({ pattern: '^/media/[^/]+/download$' }),
+  },
+  { additionalProperties: false },
+);
+export type FileAsset = Static<typeof FileAssetSchema>;
+
+export const EntryLinkSchema = Type.Object(
+  {
+    url: Type.String({ maxLength: 2048 }),
+    host: Type.String({ maxLength: 255 }),
+  },
+  { additionalProperties: false },
+);
+export type EntryLink = Static<typeof EntryLinkSchema>;
+
+export const EntryLinkInputSchema = Type.Object(
+  {
+    url: Type.String({
+      maxLength: 2048,
+      description: 'Absolute http(s) URL; credentials and non-web schemes are rejected.',
+    }),
+  },
+  { additionalProperties: false },
+);
+export type EntryLinkInput = Static<typeof EntryLinkInputSchema>;
 
 export const DeclarationsSchema = Type.Object(
   {
@@ -52,7 +89,9 @@ export const EntrySchema = Type.Object(
     body: Type.String({ maxLength: 10000 }),
     tags: TagNamesSchema,
     declarations: DeclarationsSchema,
-    asset: Type.Union([AssetSchema, Type.Null()]),
+    images: Type.Array(ImageAssetSchema, { maxItems: MAX_ENTRY_IMAGES }),
+    files: Type.Array(FileAssetSchema, { maxItems: MAX_ENTRY_FILES }),
+    links: Type.Array(EntryLinkSchema, { maxItems: MAX_ENTRY_LINKS }),
     likeCount: Type.Integer({ minimum: 0 }),
     likedByMe: Type.Boolean(),
     createdAt: TimestampSchema,
@@ -71,15 +110,27 @@ const TitleInputSchema = Type.Union([
   }),
   Type.Null(),
 ]);
+const ImageIdsSchema = Type.Array(UuidSchema, {
+  maxItems: MAX_ENTRY_IMAGES,
+  description: 'Ready image uploads owned by the author, in display order.',
+});
+const FileIdsSchema = Type.Array(UuidSchema, {
+  maxItems: MAX_ENTRY_FILES,
+  description: 'Ready file uploads owned by the author, in display order.',
+});
+const LinksSchema = Type.Array(EntryLinkInputSchema, { maxItems: MAX_ENTRY_LINKS });
 
 export const EntryInputSchema = Type.Object(
   {
     title: Type.Optional(TitleInputSchema),
     body: Type.String({
       maxLength: 10000,
-      description: 'Preserves newlines; trimmed body must be nonempty when there is no asset.',
+      description:
+        'Preserves newlines; trimmed body must be nonempty when there are no attachments.',
     }),
-    assetId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    imageIds: Type.Optional(ImageIdsSchema),
+    fileIds: Type.Optional(FileIdsSchema),
+    links: Type.Optional(LinksSchema),
     tags: TagNamesSchema,
     declarations: DeclarationsSchema,
   },
@@ -87,11 +138,19 @@ export const EntryInputSchema = Type.Object(
 );
 export type EntryInput = Static<typeof EntryInputSchema>;
 
-/** Asset identity is immutable after publication; omitted fields retain their values. */
-export const EntryPatchSchema = Type.Partial(Type.Omit(EntryInputSchema, ['assetId']), {
-  additionalProperties: false,
-  minProperties: 1,
-});
+/** Attachments and text omitted from a patch retain their existing values. */
+export const EntryPatchSchema = Type.Object(
+  {
+    title: Type.Optional(TitleInputSchema),
+    body: Type.Optional(Type.String({ maxLength: 10000 })),
+    imageIds: Type.Optional(ImageIdsSchema),
+    fileIds: Type.Optional(FileIdsSchema),
+    links: Type.Optional(LinksSchema),
+    tags: Type.Optional(TagNamesSchema),
+    declarations: Type.Optional(DeclarationsSchema),
+  },
+  { additionalProperties: false, minProperties: 1 },
+);
 export type EntryPatch = Static<typeof EntryPatchSchema>;
 
 export const LikeResponseSchema = Type.Object(

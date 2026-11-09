@@ -1,16 +1,21 @@
 import {
-  type Asset,
   EntriesCursorSchema,
-  type EntriesQuery,
   type Entry,
   type EntryInput,
   EntryInputSchema,
+  type EntryLink,
   type EntryList,
   type EntryPatch,
   EntryPatchSchema,
   EntrySchema,
+  type FileAsset,
+  type ImageAsset,
+  type ImageFormat,
   type LikeResponse,
   LikesCursorSchema,
+  MAX_ENTRY_FILES,
+  MAX_ENTRY_IMAGES,
+  MAX_ENTRY_LINKS,
   type PaginationQuery,
   type TagsQuery,
   type User,
@@ -18,56 +23,106 @@ import {
 import { and, count, desc, eq, inArray, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
 import { fromDrizzle, type PgBoss } from 'pg-boss';
 import { Value } from 'typebox/value';
-import { assets, entries, entryTags, likes, tags, users } from '../db/schema.js';
+import {
+  assets,
+  comments,
+  entries,
+  entryAttachments,
+  entryTags,
+  likes,
+  tags,
+  users,
+} from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import { hashInput, type Transaction, withIdempotency } from '../idempotency.js';
 import type { Database } from '../index.js';
 
 type Reader = Pick<Database, 'select'>;
 type NormalizedTag = { name: string; normalizedName: string };
+type NormalizedAttachment =
+  | { kind: 'image' | 'file'; assetId: string }
+  | { kind: 'link'; url: string };
 type NormalizedInput = {
   title: string | null;
   body: string;
-  assetId: string | null;
+  images: string[];
+  files: string[];
+  links: { url: string; host: string }[];
+  attachments: NormalizedAttachment[];
   tags: NormalizedTag[];
   declarations: { nsfw: boolean; aiGenerated: boolean };
 };
 type Cursor = { kind: 'entries'; id: string } | { kind: 'likes'; at: string; id: string };
 const maxId = 9223372036854775807n;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const invalid = (message: string): never => {
   throw new DomainError(400, 'VALIDATION_ERROR', message);
 };
 const notFound = (): never => {
-  throw new DomainError(404, 'NOT_FOUND', '条目或图片不存在。');
+  throw new DomainError(404, 'NOT_FOUND', '条目或附件不存在。');
 };
 
-function entryId(value: string): bigint {
+export function entryId(value: string): bigint {
   if (!/^[1-9][0-9]{0,18}$/.test(value)) return invalid('条目编号无效。');
   const id = BigInt(value);
   if (id > maxId) return invalid('条目编号超出范围。');
   return id;
 }
-function length(value: string): number {
-  return Array.from(value).length;
+function normalizeUuidList(values: string[], label: string, limit: number): string[] {
+  if (values.length > limit) return invalid(`${label}最多 ${limit} 个。`);
+  const seen = new Set<string>();
+  for (const value of values) {
+    const id = value.toLowerCase();
+    if (!uuid.test(id)) return invalid(`${label}编号无效。`);
+    if (seen.has(id)) return invalid(`${label}不能重复。`);
+    seen.add(id);
+  }
+  return [...seen];
+}
+function normalizeLink(raw: string): { url: string; host: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return invalid('链接地址无效。');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) return invalid('链接仅支持 http 或 https。');
+  if (parsed.username || parsed.password) return invalid('链接不能包含账号或密码。');
+  if (!parsed.hostname) return invalid('链接地址无效。');
+  const url = parsed.toString();
+  if (url.length > 2048) return invalid('链接最多 2048 个字符。');
+  return { url, host: parsed.host };
 }
 function normalize(input: EntryInput): NormalizedInput {
   if (!Value.Check(EntryInputSchema, input)) return invalid('条目输入无效。');
   const title = input.title?.trim() || null;
-  if (title !== null && length(title) > 200) return invalid('标题最多 200 个字符。');
-  if (length(input.body) > 10000) return invalid('正文最多 10000 个字符。');
-  const assetId = input.assetId?.toLowerCase() ?? null;
-  if (!assetId && !input.body.trim()) return invalid('纯文字条目的正文不能为空。');
-  if (assetId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(assetId))
-    return invalid('图片编号须为 UUID。');
+  if (title !== null && Array.from(title).length > 200) return invalid('标题最多 200 个字符。');
+  if (Array.from(input.body).length > 10000) return invalid('正文最多 10000 个字符。');
+  const images = normalizeUuidList(input.imageIds ?? [], '图片', MAX_ENTRY_IMAGES);
+  const files = normalizeUuidList(input.fileIds ?? [], '文件', MAX_ENTRY_FILES);
+  for (const id of images)
+    if (files.includes(id)) return invalid('同一文件不能同时作为图片和文件。');
+  const links: { url: string; host: string }[] = [];
+  const seenLinks = new Set<string>();
+  for (const link of input.links ?? []) {
+    const normalized = normalizeLink(link.url);
+    if (!seenLinks.has(normalized.url)) {
+      seenLinks.add(normalized.url);
+      links.push(normalized);
+    }
+  }
+  if (links.length > MAX_ENTRY_LINKS) return invalid(`链接最多 ${MAX_ENTRY_LINKS} 个。`);
+  if (!input.body.trim() && !images.length && !files.length && !links.length)
+    return invalid('条目正文或附件不能为空。');
   const normalizedTags = new Map<string, NormalizedTag>();
   for (const raw of input.tags) {
     const name = raw.trim();
     const normalizedName = name.normalize('NFKC').toLowerCase();
     if (
       !name ||
-      length(name) > 32 ||
+      Array.from(name).length > 32 ||
       !normalizedName ||
-      length(normalizedName) > 32 ||
+      Array.from(normalizedName).length > 32 ||
       /\p{Cc}/u.test(raw) ||
       /\p{Cc}/u.test(normalizedName)
     )
@@ -82,14 +137,21 @@ function normalize(input: EntryInput): NormalizedInput {
   return {
     title,
     body: input.body,
-    assetId,
+    images,
+    files,
+    links,
+    attachments: [
+      ...images.map((assetId) => ({ kind: 'image' as const, assetId })),
+      ...files.map((assetId) => ({ kind: 'file' as const, assetId })),
+      ...links.map((link) => ({ kind: 'link' as const, url: link.url })),
+    ],
     tags: normalizedTagList,
     declarations: { nsfw: input.declarations.nsfw, aiGenerated: input.declarations.aiGenerated },
   };
 }
 function search(value: string | undefined): string {
   const q = value?.trim() ?? '';
-  if (length(q) > 100) return invalid('搜索内容最多 100 个字符。');
+  if (Array.from(q).length > 100) return invalid('搜索内容最多 100 个字符。');
   return q;
 }
 function pattern(value: string): string {
@@ -163,12 +225,16 @@ export class EntryService {
       .select({
         entry: entries,
         author: { id: users.id, username: users.username, role: users.role },
-        asset: assets,
       })
       .from(entries)
       .innerJoin(users, eq(users.id, entries.authorId))
-      .leftJoin(assets, eq(assets.id, entries.assetId))
       .where(and(inArray(entries.id, ids), isNull(entries.deletedAt)));
+    const attachmentRows = await db
+      .select({ attachment: entryAttachments, asset: assets })
+      .from(entryAttachments)
+      .leftJoin(assets, eq(assets.id, entryAttachments.assetId))
+      .where(inArray(entryAttachments.entryId, ids))
+      .orderBy(entryAttachments.entryId, entryAttachments.position);
     const tagRows = await db
       .select({ entryId: entryTags.entryId, name: tags.name })
       .from(entryTags)
@@ -191,38 +257,67 @@ export class EntryService {
       tagMap.set(row.entryId, list);
     }
     const likeMap = new Map(likeRows.map((row) => [row.entryId, row]));
-    const result = new Map<bigint, Entry>();
-    for (const { entry, author, asset } of rows) {
-      let publicAsset: Asset | null = null;
-      if (entry.assetId) {
-        if (
-          !asset ||
-          asset.state !== 'ready' ||
-          !asset.thumbnailKey ||
-          !['jpeg', 'png', 'webp', 'gif'].includes(asset.format ?? '') ||
-          !asset.originalWidth ||
-          !asset.originalHeight ||
-          !asset.width ||
-          !asset.height ||
-          asset.bytes <= 0n ||
-          asset.bytes > BigInt(Number.MAX_SAFE_INTEGER)
-        )
-          throw new Error('Published asset metadata is invalid');
-        publicAsset = {
-          id: asset.id,
-          format: asset.format as Asset['format'],
-          bytes: Number(asset.bytes),
-          originalWidth: asset.originalWidth,
-          originalHeight: asset.originalHeight,
-          width: asset.width,
-          height: asset.height,
-          originalUrl: `/media/${asset.id}/original`,
-          thumbnailUrl: `/media/${asset.id}/thumbnail`,
-          downloadUrl: `/media/${asset.id}/download`,
-        };
+    const attachmentsMap = new Map<
+      bigint,
+      { images: ImageAsset[]; files: FileAsset[]; links: EntryLink[] }
+    >();
+    for (const { attachment, asset } of attachmentRows) {
+      let bundle = attachmentsMap.get(attachment.entryId);
+      if (!bundle) {
+        bundle = { images: [], files: [], links: [] };
+        attachmentsMap.set(attachment.entryId, bundle);
       }
+      if (attachment.kind === 'link') {
+        if (!attachment.url) throw new Error('Published link has no URL');
+        bundle.links.push({ url: attachment.url, host: new URL(attachment.url).host });
+        continue;
+      }
+      if (
+        !asset ||
+        asset.state !== 'ready' ||
+        asset.kind !== attachment.kind ||
+        asset.bytes <= 0n ||
+        asset.bytes > BigInt(Number.MAX_SAFE_INTEGER)
+      )
+        throw new Error('Published attachment is invalid');
+      if (attachment.kind === 'file') {
+        bundle.files.push({
+          id: asset.id,
+          name: asset.displayName.slice(0, 255),
+          bytes: Number(asset.bytes),
+          extension: (asset.extension ?? '').slice(0, 16),
+          downloadUrl: `/media/${asset.id}/download`,
+        });
+        continue;
+      }
+      if (
+        !asset.thumbnailKey ||
+        !['jpeg', 'png', 'webp', 'gif'].includes(asset.format ?? '') ||
+        !asset.originalWidth ||
+        !asset.originalHeight ||
+        !asset.width ||
+        !asset.height
+      )
+        throw new Error('Published image metadata is invalid');
+      bundle.images.push({
+        id: asset.id,
+        name: asset.displayName.slice(0, 255),
+        format: asset.format as ImageFormat,
+        bytes: Number(asset.bytes),
+        originalWidth: asset.originalWidth,
+        originalHeight: asset.originalHeight,
+        width: asset.width,
+        height: asset.height,
+        originalUrl: `/media/${asset.id}/original`,
+        thumbnailUrl: `/media/${asset.id}/thumbnail`,
+        downloadUrl: `/media/${asset.id}/download`,
+      });
+    }
+    const result = new Map<bigint, Entry>();
+    for (const { entry, author } of rows) {
       const own = user?.id === entry.authorId;
       const like = likeMap.get(entry.id);
+      const bundle = attachmentsMap.get(entry.id) ?? { images: [], files: [], links: [] };
       result.set(entry.id, {
         id: entry.id.toString(),
         author,
@@ -230,7 +325,9 @@ export class EntryService {
         body: entry.body,
         tags: tagMap.get(entry.id) ?? [],
         declarations: { nsfw: entry.nsfw, aiGenerated: entry.aiGenerated },
-        asset: publicAsset,
+        images: bundle.images,
+        files: bundle.files,
+        links: bundle.links,
         likeCount: like?.total ?? 0,
         likedByMe: like?.mine ?? false,
         createdAt: entry.createdAt.toISOString(),
@@ -245,7 +342,10 @@ export class EntryService {
     });
   }
 
-  async list(query: EntriesQuery, user: User | null): Promise<EntryList> {
+  async list(
+    query: { q?: string; cursor?: string; limit?: number },
+    user: User | null,
+  ): Promise<EntryList> {
     const filter = publicFilter(search(query.q));
     const cursor = decode(query.cursor, 'entries');
     const limit = limitOf(query.limit);
@@ -302,10 +402,68 @@ export class EntryService {
     await tx.insert(entryTags).values(tagIds.map((tagId) => ({ entryId: id, tagId })));
   }
 
+  private async validateAssets(
+    tx: Transaction,
+    user: User,
+    input: NormalizedInput,
+    currentEntryId: bigint | null,
+  ): Promise<void> {
+    const expected = new Map<string, 'image' | 'file'>();
+    for (const id of input.images) expected.set(id, 'image');
+    for (const id of input.files) expected.set(id, 'file');
+    if (!expected.size) return;
+    const ids = [...expected.keys()];
+    const rows = await tx
+      .select()
+      .from(assets)
+      .where(and(inArray(assets.id, ids), eq(assets.ownerId, user.id)))
+      .for('update');
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const used = await tx
+      .select({ assetId: entryAttachments.assetId, entryId: entryAttachments.entryId })
+      .from(entryAttachments)
+      .where(inArray(entryAttachments.assetId, ids));
+    const usedByOther = new Set<string>();
+    const attachedToCurrent = new Set<string>();
+    for (const row of used) {
+      if (!row.assetId) continue;
+      if (row.entryId === currentEntryId) attachedToCurrent.add(row.assetId);
+      else usedByOther.add(row.assetId);
+    }
+    for (const [id, kind] of expected) {
+      const asset = byId.get(id);
+      if (!asset) return notFound();
+      if (asset.kind !== kind) return invalid('附件类型不匹配。');
+      if (usedByOther.has(id))
+        throw new DomainError(409, 'UPLOAD_ALREADY_USED', '该附件已被其他条目使用。');
+      if (!attachedToCurrent.has(id) && asset.expiresAt && asset.expiresAt.getTime() <= Date.now())
+        throw new DomainError(409, 'UPLOAD_EXPIRED', '该附件已过期。');
+      if (asset.state !== 'ready')
+        throw new DomainError(409, 'UPLOAD_NOT_READY', '该附件尚未就绪。');
+    }
+    await tx.update(assets).set({ expiresAt: null }).where(inArray(assets.id, ids));
+  }
+
+  private async insertAttachments(
+    tx: Transaction,
+    id: bigint,
+    input: NormalizedInput,
+  ): Promise<void> {
+    if (!input.attachments.length) return;
+    await tx.insert(entryAttachments).values(
+      input.attachments.map((attachment, position) => ({
+        entryId: id,
+        kind: attachment.kind,
+        assetId: attachment.kind === 'link' ? null : attachment.assetId,
+        url: attachment.kind === 'link' ? attachment.url : null,
+        position,
+      })),
+    );
+  }
+
   async create(input: EntryInput, user: User, key: string): Promise<Entry> {
     const normalized = normalize(input);
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key))
-      return invalid('幂等键须为 UUID。');
+    if (!uuid.test(key)) return invalid('幂等键须为 UUID。');
     return withIdempotency(
       this.db,
       {
@@ -317,37 +475,20 @@ export class EntryService {
       },
       (value): value is Entry => Value.Check(EntrySchema, value),
       async (tx) => {
-        if (normalized.assetId) {
-          const [asset] = await tx
-            .select()
-            .from(assets)
-            .where(and(eq(assets.id, normalized.assetId), eq(assets.ownerId, user.id)))
-            .for('update');
-          if (!asset) return notFound();
-          const [used] = await tx
-            .select({ id: entries.id })
-            .from(entries)
-            .where(eq(entries.assetId, asset.id))
-            .limit(1);
-          if (used) throw new DomainError(409, 'UPLOAD_ALREADY_USED', '该图片已被使用。');
-          if (asset.expiresAt && asset.expiresAt.getTime() <= Date.now())
-            throw new DomainError(409, 'UPLOAD_EXPIRED', '该图片已过期。');
-          if (asset.state !== 'ready')
-            throw new DomainError(409, 'UPLOAD_NOT_READY', '该图片尚未就绪。');
-        }
+        await this.validateAssets(tx, user, normalized, null);
         const [created] = await tx
           .insert(entries)
           .values({
             authorId: user.id,
             title: normalized.title,
             body: normalized.body,
-            assetId: normalized.assetId,
             nsfw: normalized.declarations.nsfw,
             aiGenerated: normalized.declarations.aiGenerated,
           })
           .returning({ id: entries.id });
         if (!created) throw new Error('Entry insertion returned no row');
         await this.replaceTags(tx, created.id, normalized.tags);
+        await this.insertAttachments(tx, created.id, normalized);
         const [entry] = await this.hydrate(tx, [created.id], user);
         if (!entry) throw new Error('Created entry disappeared');
         return entry;
@@ -372,16 +513,32 @@ export class EntryService {
         .from(entryTags)
         .innerJoin(tags, eq(tags.id, entryTags.tagId))
         .where(eq(entryTags.entryId, parsedId));
+      const existingAttachments = await tx
+        .select()
+        .from(entryAttachments)
+        .where(eq(entryAttachments.entryId, parsedId))
+        .orderBy(entryAttachments.position);
+      const existingImages: string[] = [];
+      const existingFiles: string[] = [];
+      const existingLinks: { url: string }[] = [];
+      for (const row of existingAttachments) {
+        if (row.kind === 'image' && row.assetId) existingImages.push(row.assetId);
+        else if (row.kind === 'file' && row.assetId) existingFiles.push(row.assetId);
+        else if (row.kind === 'link' && row.url) existingLinks.push({ url: row.url });
+      }
       const normalized = normalize({
         title: input.title !== undefined ? input.title : existing.title,
         body: input.body ?? existing.body,
-        assetId: existing.assetId,
+        imageIds: input.imageIds ?? existingImages,
+        fileIds: input.fileIds ?? existingFiles,
+        links: input.links ?? existingLinks,
         tags: input.tags ?? existingTags.map((tag) => tag.name),
         declarations: input.declarations ?? {
           nsfw: existing.nsfw,
           aiGenerated: existing.aiGenerated,
         },
       });
+      await this.validateAssets(tx, user, normalized, parsedId);
       await tx
         .update(entries)
         .set({
@@ -393,6 +550,26 @@ export class EntryService {
         })
         .where(eq(entries.id, parsedId));
       if (input.tags !== undefined) await this.replaceTags(tx, parsedId, normalized.tags);
+      const attachmentsChanged =
+        input.imageIds !== undefined || input.fileIds !== undefined || input.links !== undefined;
+      if (attachmentsChanged) {
+        await tx.delete(entryAttachments).where(eq(entryAttachments.entryId, parsedId));
+        await this.insertAttachments(tx, parsedId, normalized);
+        const kept = new Set([...normalized.images, ...normalized.files]);
+        const removed: string[] = [];
+        for (const row of existingAttachments) {
+          if (row.assetId && !kept.has(row.assetId)) removed.push(row.assetId);
+        }
+        for (const assetId of removed) {
+          await tx.update(assets).set({ state: 'deleted' }).where(eq(assets.id, assetId));
+          const jobId = await this.boss.send(
+            'asset-delete',
+            { assetId },
+            { db: fromDrizzle(tx, sql) },
+          );
+          if (!jobId) throw new Error('Asset deletion enqueue returned no job');
+        }
+      }
       const [entry] = await this.hydrate(tx, [parsedId], user);
       if (!entry) throw new Error('Updated entry disappeared');
       return entry;
@@ -416,11 +593,18 @@ export class EntryService {
         .set({ deletedAt: now, updatedAt: now })
         .where(eq(entries.id, parsedId));
       await tx.delete(likes).where(eq(likes.entryId, parsedId));
-      if (entry.assetId) {
-        await tx.update(assets).set({ state: 'deleted' }).where(eq(assets.id, entry.assetId));
+      await tx.delete(comments).where(eq(comments.entryId, parsedId));
+      const attachments = await tx
+        .select({ assetId: entryAttachments.assetId })
+        .from(entryAttachments)
+        .where(eq(entryAttachments.entryId, parsedId));
+      await tx.delete(entryAttachments).where(eq(entryAttachments.entryId, parsedId));
+      for (const { assetId } of attachments) {
+        if (!assetId) continue;
+        await tx.update(assets).set({ state: 'deleted' }).where(eq(assets.id, assetId));
         const jobId = await this.boss.send(
           'asset-delete',
-          { assetId: entry.assetId },
+          { assetId },
           { db: fromDrizzle(tx, sql) },
         );
         if (!jobId) throw new Error('Asset deletion enqueue returned no job');

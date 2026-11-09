@@ -16,6 +16,11 @@ const formats: Record<ImageFormat, { mime: string; extension: string }> = {
   webp: { mime: 'image/webp', extension: 'webp' },
   gif: { mime: 'image/gif', extension: 'gif' },
 };
+function attachmentName(name: string) {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: Header values must not carry controls.
+  const ascii = name.replace(/[\x00-\x1f\x7f"\\]/g, '').replace(/[^\x20-\x7e]/g, '_');
+  return `filename="${ascii || 'download'}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
 
 export async function installMedia(
   app: FastifyInstance,
@@ -51,10 +56,13 @@ export async function installMedia(
         },
         async (request, reply) => {
           const asset = await assets.published(request.params.assetId);
-          const format = formats[asset.format];
-          const stream = storage.read(
-            kind === 'thumbnail' ? asset.thumbnailKey : asset.originalKey,
-          );
+          if (asset.kind === 'file' && kind !== 'download')
+            throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
+          if (asset.kind === 'image' && kind === 'thumbnail' && !asset.thumbnailKey)
+            throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
+          const key = kind === 'thumbnail' ? asset.thumbnailKey : asset.originalKey;
+          if (!key) throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
+          const stream = storage.read(key);
           try {
             // Open before sending headers: a missing file is a normal 404, not a broken 200 stream.
             await once(stream, 'open');
@@ -65,11 +73,19 @@ export async function installMedia(
             }
             throw error;
           }
+          if (asset.kind === 'file') {
+            reply.type('application/octet-stream');
+            reply.header('Content-Disposition', `attachment; ${attachmentName(asset.displayName)}`);
+            return reply.send(stream);
+          }
+          const format = formats[asset.format];
           reply.type(kind === 'thumbnail' ? 'image/webp' : format.mime);
           const extension = kind === 'thumbnail' ? 'webp' : format.extension;
           reply.header(
             'Content-Disposition',
-            `${kind === 'download' ? 'attachment' : 'inline'}; filename="entry-${asset.entryId}.${extension}"`,
+            `${
+              kind === 'download' ? 'attachment' : 'inline'
+            }; filename="entry-${asset.entryId}-${asset.position}.${extension}"`,
           );
           return reply.send(stream);
         },

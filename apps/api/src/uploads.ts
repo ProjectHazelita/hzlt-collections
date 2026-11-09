@@ -10,6 +10,7 @@ import {
   ErrorResponseSchema,
   IdempotentRequestHeadersSchema,
   UploadAcceptedSchema,
+  type UploadKind,
   UploadParamsSchema,
   UploadStatusSchema,
 } from '@hcl/contracts';
@@ -28,10 +29,24 @@ const invalidMultipart = () =>
   new DomainError(
     400,
     'VALIDATION_ERROR',
-    'Upload exactly one file in the file field, without other parts.',
+    'Upload exactly one file in the file field, plus at most one kind field.',
   );
-const tooLarge = () =>
-  new DomainError(413, 'IMAGE_TOO_LARGE', 'The image exceeds the upload size limit.');
+const tooLarge = (kind: UploadKind) =>
+  kind === 'image'
+    ? new DomainError(413, 'IMAGE_TOO_LARGE', 'The image exceeds the upload size limit.')
+    : new DomainError(413, 'FILE_TOO_LARGE', 'The file exceeds the upload size limit.');
+const safeDisplayName = (value: string) => {
+  const name = value.split(/[\\/]/).pop() ?? '';
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: Reject control bytes in untrusted filenames.
+  const cleaned = name.replace(/[\x00-\x1f\x7f]/g, '').trim();
+  return (cleaned || 'upload').slice(0, 255);
+};
+const safeExtension = (name: string) => {
+  const index = name.lastIndexOf('.');
+  if (index <= 0) return '';
+  const extension = name.slice(index);
+  return /^\.[A-Za-z0-9]{1,10}$/.test(extension) ? extension.toLowerCase() : '';
+};
 
 export async function installUploads(
   app: FastifyInstance,
@@ -50,9 +65,10 @@ export async function installUploads(
   const assets = new AssetService(db, boss, storage);
   const limits = {
     files: 1,
-    fields: 0,
-    parts: 1,
+    fields: 1,
+    parts: 2,
     fileSize: config.maxUploadBytes,
+    fieldSize: 16,
     fieldNameSize: 100,
     headerPairs: 100,
   };
@@ -80,7 +96,7 @@ export async function installUploads(
         config: {
           rateLimit: {
             hook: 'preHandler',
-            max: 10,
+            max: 60,
             timeWindow: 60_000,
             keyGenerator: (request) => request.requireUser().id,
           },
@@ -105,12 +121,20 @@ export async function installUploads(
         const hash = createHash('sha256');
         let displayName = '';
         let seenFile = false;
+        let seenKind = false;
+        let kind: UploadKind = 'image';
         let invalid = false;
         let oversized = false;
         try {
           for await (const part of request.parts({ limits })) {
-            if (part.type !== 'file') {
-              invalid = true;
+            if (part.type === 'field') {
+              if (part.fieldname !== 'kind' || seenKind) {
+                invalid = true;
+                continue;
+              }
+              seenKind = true;
+              if (part.value === 'image' || part.value === 'file') kind = part.value;
+              else invalid = true;
               continue;
             }
             if (seenFile || part.fieldname !== 'file') {
@@ -127,7 +151,7 @@ export async function installUploads(
               transform(chunk: Buffer, _encoding, callback) {
                 bytes += chunk.length;
                 if (bytes > config.maxUploadBytes) {
-                  callback(tooLarge());
+                  callback(tooLarge(kind));
                   return;
                 }
                 hash.update(chunk);
@@ -148,24 +172,30 @@ export async function installUploads(
           // and rejected extra parts; file-stream completion alone is not acceptance.
           if (abort.signal.aborted || request.raw.aborted || !request.raw.complete)
             throw invalidMultipart();
-          if (oversized) throw tooLarge();
+          if (oversized) throw tooLarge(kind);
           if (!seenFile || invalid) throw invalidMultipart();
-          const format = sniffImageFormat(header.subarray(0, headerLength));
-          if (!format)
+          const name = safeDisplayName(displayName);
+          const format =
+            kind === 'image' ? sniffImageFormat(header.subarray(0, headerLength)) : null;
+          if (kind === 'image' && !format)
             throw new DomainError(
               415,
               'UNSUPPORTED_IMAGE_TYPE',
               'Only static JPEG, PNG, WebP and GIF images are supported.',
             );
+          if (bytes <= 0) throw new DomainError(400, 'INVALID_FILE', 'The file is empty.');
           const result = await assets.create({
             id: randomUUID(),
             ownerId: user.id,
             key: request.headers['idempotency-key'],
             temporaryKey,
-            displayName,
+            displayName: name,
             sha256: hash.digest('hex'),
             bytes,
+            kind,
             format,
+            mime: kind === 'file' ? 'application/octet-stream' : null,
+            extension: kind === 'file' ? safeExtension(name) : null,
           });
           return reply.code(202).send(result);
         } catch (error) {
@@ -177,7 +207,7 @@ export async function installUploads(
             typeof error.code === 'string'
               ? error.code
               : undefined;
-          if (code === 'FST_REQ_FILE_TOO_LARGE') throw tooLarge();
+          if (code === 'FST_REQ_FILE_TOO_LARGE') throw tooLarge(kind);
           if (
             abort.signal.aborted ||
             code?.startsWith('FST_') ||

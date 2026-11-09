@@ -68,7 +68,7 @@ export async function createFixture(environment: Record<string, string> = {}) {
     },
     async reset() {
       await db.execute(
-        sql`truncate table entry_tags, likes, entries, assets, tags, idempotency_keys, sessions, users restart identity cascade`,
+        sql`truncate table comments, entry_attachments, entry_tags, likes, entries, assets, tags, idempotency_keys, sessions, users restart identity cascade`,
       );
     },
     async close() {
@@ -80,6 +80,8 @@ export async function createFixture(environment: Record<string, string> = {}) {
     },
   };
 }
+
+export type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
 export class Client {
   cookie = '';

@@ -76,7 +76,7 @@ describe('private multipart uploads with a real independent Worker', () => {
       const accepted = await upload(owner, image.bytes);
       expect(accepted.status).toBe(202);
       const pending = await accepted.json();
-      expect(pending).toEqual({ id: expect.any(String), status: 'pending' });
+      expect(pending).toMatchObject({ id: expect.any(String), kind: 'image', status: 'pending' });
       expect((await other.request('/api/v1/uploads/' + pending.id)).status).toBe(404);
       expect((await fetch(fixture.address + '/api/v1/uploads/' + pending.id)).status).toBe(404);
       const status = await terminal(owner, pending.id);

@@ -7,7 +7,7 @@ import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import type { JobWithMetadata, PgBoss } from 'pg-boss';
 import { MediaProcessingError, processImage } from './supervisor.js';
 
-const { assets, entries, sessions, idempotencyKeys } = schema;
+const { assets, entries, entryAttachments, sessions, idempotencyKeys } = schema;
 const workOptions = {
   batchSize: 1,
   localConcurrency: 1,
@@ -73,6 +73,23 @@ export async function startWorker({ db, boss, storage, config }: Options): Promi
       return current;
     });
     if (!asset) return;
+    if (asset.kind === 'file') {
+      const now = new Date();
+      const updated = await db
+        .update(assets)
+        .set({
+          readyAt: now,
+          expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          state: 'ready',
+          errorCode: null,
+        })
+        .where(
+          and(eq(assets.id, asset.id), eq(assets.state, 'pending'), eq(assets.attemptToken, token)),
+        )
+        .returning({ id: assets.id });
+      if (updated.length === 0) throw new Error('File asset state changed during processing');
+      return;
+    }
     const key = attemptKey(asset.id, token);
     try {
       if (signal.aborted) throw abortError();
@@ -131,9 +148,10 @@ export async function startWorker({ db, boss, storage, config }: Options): Promi
       const [asset] = await tx.select().from(assets).where(eq(assets.id, id)).for('update');
       if (!asset) return;
       const [published] = await tx
-        .select({ id: entries.id })
-        .from(entries)
-        .where(and(eq(entries.assetId, id), isNull(entries.deletedAt)))
+        .select({ id: entryAttachments.id })
+        .from(entryAttachments)
+        .innerJoin(entries, eq(entries.id, entryAttachments.entryId))
+        .where(and(eq(entryAttachments.assetId, id), isNull(entries.deletedAt)))
         .limit(1);
       if (published) return;
       const expired =

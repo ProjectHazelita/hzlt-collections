@@ -10,6 +10,7 @@ import {
 } from '@hcl/server';
 import Fastify from 'fastify';
 import { installAuth } from './auth.js';
+import { installComments } from './comments.js';
 import { installEntries } from './entries.js';
 import { installErrors } from './errors.js';
 import { installMedia } from './media.js';
@@ -48,6 +49,7 @@ export async function buildApp(
   });
   await installAuth(app, { db, config });
   await installEntries(app, { db, boss });
+  await installComments(app, { db });
   await installUploads(app, { db, boss, storage, config });
   await installMedia(app, { db, boss, storage });
   app.get('/api/v1/health', { schema: { response: { 200: HealthResponseSchema } } }, async () => {

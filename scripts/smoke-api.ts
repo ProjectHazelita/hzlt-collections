@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { crc32, createDeflate } from 'node:zlib';
 import { animatedImages, staticImages } from '../apps/api/src/testing/images.js';
 import type {
+  Comment,
+  CommentList,
   Entry,
   EntryInput,
   EntryList,
@@ -137,6 +139,16 @@ async function upload(client: Client, bytes: Uint8Array, key = randomUUID(), ext
     body,
   });
 }
+async function uploadFile(client: Client, bytes: Uint8Array, name = 'notes.txt') {
+  const body = new FormData();
+  body.append('kind', 'file');
+  body.append('file', new Blob([new Uint8Array(bytes)], { type: 'text/plain' }), name);
+  return client.request('/api/v1/uploads', {
+    method: 'POST',
+    headers: { 'idempotency-key': randomUUID() },
+    body,
+  });
+}
 async function accepted(response: Response): Promise<UploadAccepted> {
   assert.equal(response.status, 202, 'Expected asynchronous upload acceptance');
   const result = (await response.json()) as UploadAccepted;
@@ -165,7 +177,7 @@ async function failedUpload(client: Client, bytes: Uint8Array, code: string) {
     '/api/v1/entries',
     409,
     'UPLOAD_NOT_READY',
-    jsonBody({ ...text(''), assetId: id }, 'POST', randomUUID()),
+    jsonBody({ ...text(''), imageIds: [id] }, 'POST', randomUUID()),
   );
   rejected++;
 }
@@ -232,7 +244,7 @@ async function overByteUpload(client: Client) {
     },
     body,
     duplex: 'half',
-  } as RequestInit & { duplex: 'half' });
+  } as unknown as RequestInit & { duplex: 'half' });
   assert.equal(response.status, 413);
   assert.equal((await response.json()).error.code, 'IMAGE_TOO_LARGE');
   rejected++;
@@ -330,12 +342,44 @@ try {
   const first = await create(member, source);
   published++;
   assert.equal(first.title, null);
-  assert.equal(first.asset, null);
+  assert.deepEqual(first.images, []);
+  assert.deepEqual(first.files, []);
+  assert.deepEqual(first.links, []);
   assert.deepEqual(new Set(first.tags), new Set(['中文标签', 'Ｔｅｓｔ']));
   const publicEntry = await visitor.json<Entry>(entryPath(first.id));
   assert.equal(publicEntry.id, first.id);
   assert.equal(publicEntry.canEdit, false);
   assert.equal(publicEntry.canDelete, false);
+  const commentsPath = `/api/v1/entries/${first.id}/comments`;
+  assert.deepEqual(await visitor.json<CommentList>(commentsPath), { items: [], total: 0 });
+  await error(visitor, commentsPath, 401, 'AUTH_REQUIRED', jsonBody({ body: 'guest' }, 'POST'));
+  const rootComment = await member.json<Comment>(
+    commentsPath,
+    201,
+    jsonBody({ body: '第一条评论' }, 'POST'),
+  );
+  const replyComment = await owner.json<Comment>(
+    commentsPath,
+    201,
+    jsonBody({ body: '回复第一条', parentId: rootComment.id }, 'POST'),
+  );
+  await member.json<Comment>(
+    commentsPath,
+    201,
+    jsonBody({ body: '回复回复', parentId: replyComment.id }, 'POST'),
+  );
+  const threads = await visitor.json<CommentList>(commentsPath);
+  assert.equal(threads.total, 3);
+  assert.equal(threads.items.length, 1);
+  assert.deepEqual(
+    threads.items[0]!.replies.map((item) => item.body),
+    ['回复第一条', '回复回复'],
+  );
+  assert.equal(threads.items[0]!.replies[0]!.replyTo?.username, rootComment.author.username);
+  assert.equal(threads.items[0]!.replies[1]!.replyTo?.username, replyComment.author.username);
+  console.log(
+    'SMOKE comments: public threads, guest denial, replies as one visual level with reply targets',
+  );
   await error(
     owner,
     entryPath(first.id),
@@ -470,18 +514,19 @@ try {
     assert.equal(ready.height, image.height);
     await absentMedia(member, pending.id);
     await absentMedia(visitor, pending.id);
-    const entry = await create(member, { ...text(''), assetId: pending.id, tags: ['媒体验收'] });
+    const entry = await create(member, { ...text(''), imageIds: [pending.id], tags: ['媒体验收'] });
     published++;
     imageEntries.push(entry);
-    assert(entry.asset);
-    assert.equal(entry.asset.id, pending.id);
-    assert.equal(entry.asset.originalWidth, image.originalWidth);
-    assert.equal(entry.asset.originalHeight, image.originalHeight);
-    assert.equal(entry.asset.width, image.width);
-    assert.equal(entry.asset.height, image.height);
-    assert.equal(entry.asset.bytes, image.bytes.length);
+    const publishedImage = entry.images[0];
+    assert(publishedImage);
+    assert.equal(publishedImage.id, pending.id);
+    assert.equal(publishedImage.originalWidth, image.originalWidth);
+    assert.equal(publishedImage.originalHeight, image.originalHeight);
+    assert.equal(publishedImage.width, image.width);
+    assert.equal(publishedImage.height, image.height);
+    assert.equal(publishedImage.bytes, image.bytes.length);
     const format = image.name === 'rotated-jpeg' ? 'jpeg' : image.name;
-    assert.equal(entry.asset.format, format);
+    assert.equal(publishedImage.format, format);
     const row = (await pool.query('select sha256 from assets where id=$1', [pending.id])).rows[0];
     assert.equal(row.sha256, sha256(image.bytes));
     for (const kind of mediaKinds) {
@@ -506,7 +551,7 @@ try {
         assert.equal(sha256(bytes), sha256(image.bytes));
         assert.equal(
           response.headers.get('content-disposition'),
-          `${kind === 'download' ? 'attachment' : 'inline'}; filename="entry-${entry.id}.${format === 'jpeg' ? 'jpg' : format}"`,
+          `${kind === 'download' ? 'attachment' : 'inline'}; filename="entry-${entry.id}-0.${format === 'jpeg' ? 'jpg' : format}"`,
         );
       }
     }
@@ -518,6 +563,40 @@ try {
   rejected++;
   console.log(
     'SMOKE media: five static/EXIF fixtures, independent Worker, private ready assets, exact original/download SHA256 and decoded WebP',
+  );
+
+  const linkEntry = await create(member, {
+    ...text(''),
+    links: [{ url: 'https://example.com/reference' }],
+    tags: [],
+  });
+  published++;
+  assert.equal(linkEntry.links[0]!.host, 'example.com');
+  const fileBytes = Buffer.from('hzlt file attachment\n');
+  const fileUpload = await uploadFile(member, fileBytes);
+  const fileAccepted = await accepted(fileUpload);
+  assert.equal(fileAccepted.kind, 'file');
+  const fileReady = await terminal(member, fileAccepted.id);
+  assert.equal(fileReady.status, 'ready');
+  assert.equal(fileReady.kind, 'file');
+  const fileEntry = await create(member, {
+    ...text(''),
+    fileIds: [fileAccepted.id],
+    tags: [],
+  });
+  published++;
+  assert.equal(fileEntry.files[0]!.name, 'notes.txt');
+  const fileDownload = await visitor.request(`/media/${fileAccepted.id}/download`);
+  assert.equal(fileDownload.status, 200);
+  assert.equal(fileDownload.headers.get('content-type'), 'application/octet-stream');
+  assert.match(
+    fileDownload.headers.get('content-disposition') ?? '',
+    /^attachment; filename="notes\.txt"; filename\*=UTF-8''notes\.txt$/,
+  );
+  assert.deepEqual(Buffer.from(await fileDownload.arrayBuffer()), fileBytes);
+  assert.equal((await visitor.request(`/media/${fileAccepted.id}/original`)).status, 404);
+  console.log(
+    'SMOKE attachments: link entry host and private file upload ready, downloadable only after publication',
   );
 
   const svg = await upload(
@@ -549,7 +628,7 @@ try {
   assert.equal((await owner.request(entryPath(removed.id), { method: 'DELETE' })).status, 204);
   await error(visitor, entryPath(removed.id), 404, 'NOT_FOUND');
   await error(owner, entryPath(removed.id), 404, 'NOT_FOUND', { method: 'DELETE' });
-  await absentMedia(visitor, removed.asset!.id);
+  await absentMedia(visitor, removed.images[0]!.id);
   for (const path of [
     '/api/v1/entries',
     '/api/v1/entries?q=' + encodeURIComponent('媒体验收'),

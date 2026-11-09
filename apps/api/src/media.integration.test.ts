@@ -27,6 +27,19 @@ async function upload(client: Client, bytes: Uint8Array) {
   return (await response.json()).id as string;
 }
 
+async function uploadFile(client: Client, bytes: Uint8Array, name = 'notes.txt') {
+  const body = new FormData();
+  body.append('kind', 'file');
+  body.append('file', new Blob([new Uint8Array(bytes)], { type: 'text/plain' }), name);
+  const response = await client.request('/api/v1/uploads', {
+    method: 'POST',
+    headers: { 'idempotency-key': randomUUID() },
+    body,
+  });
+  expect(response.status).toBe(202);
+  return (await response.json()).id as string;
+}
+
 async function terminal(client: Client, id: string): Promise<UploadStatus> {
   const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
@@ -45,7 +58,7 @@ async function publish(client: Client, assetId: string) {
     headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
     body: JSON.stringify({
       body: 'published media lifecycle',
-      assetId,
+      imageIds: [assetId],
       tags: ['media'],
       declarations: { nsfw: false, aiGenerated: false },
     }),
@@ -105,7 +118,7 @@ describe('real HTTP published media authorization and deletion', () => {
           expect(bytes).toEqual(image.bytes);
           const extension = format === 'jpeg' ? 'jpg' : format;
           expect(response.headers.get('content-disposition')).toBe(
-            `${kind === 'download' ? 'attachment' : 'inline'}; filename="entry-${entry.id}.${extension}"`,
+            `${kind === 'download' ? 'attachment' : 'inline'}; filename="entry-${entry.id}-0.${extension}"`,
           );
         }
       }
@@ -192,6 +205,49 @@ describe('real HTTP published media authorization and deletion', () => {
       await delay(100);
     } while (Date.now() < retryDeadline);
     expect(state).toBe('completed');
+  }, 40_000);
+
+  it('publishes a file asset only as a sanitized download and removes it with the entry', async () => {
+    worker = await launchWorker(fixture);
+    const visitor = new Client(fixture.address);
+    const bytes = Buffer.from('hzlt file attachment\n');
+    const id = await uploadFile(author, bytes, '创作笔记.txt');
+    const status = await terminal(author, id);
+    expect(status).toMatchObject({ id, kind: 'file', name: '创作笔记.txt', status: 'ready' });
+    await privateToEveryone(id);
+    const created = await author.request('/api/v1/entries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
+      body: JSON.stringify({
+        body: '',
+        fileIds: [id],
+        tags: [],
+        declarations: { nsfw: false, aiGenerated: false },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const entry = await created.json();
+    expect(entry.files).toMatchObject([
+      { id, name: '创作笔记.txt', bytes: bytes.length, extension: '.txt' },
+    ]);
+    for (const kind of ['original', 'thumbnail'] as const)
+      expect((await visitor.request(media(id, kind))).status).toBe(404);
+    const download = await visitor.request(media(id, 'download'));
+    expect(download.status).toBe(200);
+    expect(download.headers.get('content-type')).toBe('application/octet-stream');
+    expect(download.headers.get('cache-control')).toBe('no-store');
+    expect(download.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(download.headers.get('content-disposition')).toMatch(
+      /^attachment; filename=".*\.txt"; filename\*=UTF-8''/,
+    );
+    expect(Buffer.from(await download.arrayBuffer())).toEqual(bytes);
+    expect((await author.request('/api/v1/entries/' + entry.id, { method: 'DELETE' })).status).toBe(
+      204,
+    );
+    await privateToEveryone(id);
+    const deadline = Date.now() + 10_000;
+    while ((await fixture.storage.files()).length && Date.now() < deadline) await delay(100);
+    expect(await fixture.storage.files()).toEqual([]);
   }, 40_000);
 
   it('returns 404 for missing files even while their published database association remains active', async () => {

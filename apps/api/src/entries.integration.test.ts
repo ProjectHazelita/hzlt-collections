@@ -52,7 +52,9 @@ describe('real entry lifecycle, authorization and pagination', () => {
       id: '1',
       title: null,
       body: '正文\n保留换行',
-      asset: null,
+      images: [],
+      files: [],
+      links: [],
       canEdit: true,
       canDelete: true,
     });
@@ -133,7 +135,7 @@ describe('real entry lifecycle, authorization and pagination', () => {
     expect(otherUser.data.id).not.toBe(results[0]!.data.id);
   });
 
-  it('keeps partial edits atomic and does not allow changing image identity', async () => {
+  it('keeps partial edits atomic and rejects unknown attachment fields', async () => {
     const created = await create(member, {
       ...textInput('original body'),
       title: 'original title',
@@ -242,5 +244,162 @@ describe('real entry lifecycle, authorization and pagination', () => {
     ).toBe(401);
     expect((await stale.request('/api/v1/admin/entries')).status).toBe(401);
     expect((await fetch(fixture.address + '/api/v1/entries/' + created.data.id)).status).toBe(200);
+  });
+
+  it('stores ordered images, files and links and replaces them atomically on edit', async () => {
+    const memberId = (await fixture.pool.query("select id from users where username='site_member'"))
+      .rows[0].id as string;
+    const ownerId = (await fixture.pool.query("select id from users where username='site_owner'"))
+      .rows[0].id as string;
+    const makeAsset = async (owner: string, kind: 'image' | 'file') => {
+      const id = randomUUID();
+      await fixture.pool.query(
+        `insert into assets
+          (id, owner_id, kind, state, original_key, thumbnail_key, display_name, sha256, bytes,
+           format, mime, extension, original_width, original_height, width, height, ready_at)
+         values ($1,$2,$3,'ready',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())`,
+        [
+          id,
+          owner,
+          kind,
+          `originals/${id}.bin`,
+          kind === 'image' ? `variants/${id}/${randomUUID()}.webp` : null,
+          kind === 'image' ? 'image.png' : 'notes.pdf',
+          '0'.repeat(64),
+          kind === 'image' ? 128 : 2048,
+          kind === 'image' ? 'png' : null,
+          kind === 'image' ? null : 'application/octet-stream',
+          kind === 'image' ? null : '.pdf',
+          kind === 'image' ? 128 : null,
+          kind === 'image' ? 128 : null,
+          kind === 'image' ? 128 : null,
+          kind === 'image' ? 128 : null,
+        ],
+      );
+      return id;
+    };
+    const first = await makeAsset(memberId, 'image');
+    const second = await makeAsset(memberId, 'image');
+    const third = await makeAsset(memberId, 'image');
+    const file = await makeAsset(memberId, 'file');
+    const foreign = await makeAsset(ownerId, 'image');
+
+    const created = await create(member, {
+      body: '',
+      imageIds: [first, second],
+      fileIds: [file],
+      links: [{ url: 'https://example.com/a#section' }, { url: 'https://example.org/b' }],
+      tags: [],
+      declarations: { nsfw: false, aiGenerated: false },
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.data.images.map((image: { id: string }) => image.id)).toEqual([first, second]);
+    expect(created.data.files).toMatchObject([{ id: file, name: 'notes.pdf', extension: '.pdf' }]);
+    expect(created.data.links.map((link: { host: string }) => link.host)).toEqual([
+      'example.com',
+      'example.org',
+    ]);
+
+    const updated = await patch(member, created.data.id, {
+      imageIds: [third, second],
+      fileIds: [],
+      links: [{ url: 'https://example.net/next' }],
+    });
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({
+      body: '',
+      images: [{ id: third }, { id: second }],
+      files: [],
+      links: [{ host: 'example.net' }],
+    });
+    expect(
+      (await fixture.pool.query('select state from assets where id=$1', [first])).rows[0].state,
+    ).toBe('deleted');
+    expect(
+      (await fixture.pool.query('select state from assets where id=$1', [file])).rows[0].state,
+    ).toBe('deleted');
+    expect(
+      (await fixture.pool.query('select state from assets where id=$1', [second])).rows[0].state,
+    ).toBe('ready');
+
+    expect((await patch(member, created.data.id, { imageIds: [foreign] })).status).toBe(404);
+    for (const invalid of [
+      { imageIds: Array.from({ length: 21 }, () => randomUUID()) },
+      { fileIds: Array.from({ length: 6 }, () => randomUUID()) },
+      { links: Array.from({ length: 6 }, (_, index) => ({ url: `https://e.com/${index}` })) },
+      { links: [{ url: 'javascript:alert(1)' }] },
+      { links: [{ url: 'https://user:pass@example.com/' }] },
+      { body: '   ', imageIds: [], fileIds: [], links: [] },
+    ]) {
+      expect((await patch(member, created.data.id, invalid)).status).toBe(400);
+    }
+    expect((await patch(member, created.data.id, { imageIds: [first] })).status).toBe(409);
+    expect((await patch(owner, created.data.id, { body: 'owner cannot edit' })).status).toBe(403);
+
+    const reuse = await create(member, {
+      body: '',
+      imageIds: [second],
+      tags: [],
+      declarations: { nsfw: false, aiGenerated: false },
+    });
+    expect(reuse.response.status).toBe(409);
+    expect(reuse.data.error.code).toBe('UPLOAD_ALREADY_USED');
+  });
+
+  it('accepts twenty images, five files and five links together', async () => {
+    const memberId = (await fixture.pool.query("select id from users where username='site_member'"))
+      .rows[0].id as string;
+    const makeAsset = async (kind: 'image' | 'file', index: number) => {
+      const id = randomUUID();
+      await fixture.pool.query(
+        `insert into assets
+          (id, owner_id, kind, state, original_key, thumbnail_key, display_name, sha256, bytes,
+           format, mime, extension, original_width, original_height, width, height, ready_at)
+         values ($1,$2,$3,'ready',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())`,
+        [
+          id,
+          memberId,
+          kind,
+          `originals/${id}.bin`,
+          kind === 'image' ? `variants/${id}/${randomUUID()}.webp` : null,
+          kind === 'image' ? `image-${index}.png` : `file-${index}.pdf`,
+          '0'.repeat(64),
+          kind === 'image' ? 256 : 1024,
+          kind === 'image' ? 'png' : null,
+          kind === 'image' ? null : 'application/octet-stream',
+          kind === 'image' ? null : '.pdf',
+          kind === 'image' ? 256 : null,
+          kind === 'image' ? 256 : null,
+          kind === 'image' ? 256 : null,
+          kind === 'image' ? 256 : null,
+        ],
+      );
+      return id;
+    };
+    const imageIds = [];
+    for (let index = 0; index < 20; index++) imageIds.push(await makeAsset('image', index));
+    const fileIds = [];
+    for (let index = 0; index < 5; index++) fileIds.push(await makeAsset('file', index));
+    const links = Array.from({ length: 5 }, (_, index) => ({
+      url: `https://example.com/${index}`,
+    }));
+    const created = await create(member, {
+      body: '',
+      imageIds,
+      fileIds,
+      links,
+      tags: ['组合'],
+      declarations: { nsfw: false, aiGenerated: false },
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.data.images.map((image: { id: string }) => image.id)).toEqual(imageIds);
+    expect(created.data.files.map((file: { id: string }) => file.id)).toEqual(fileIds);
+    expect(created.data.links.map((link: { url: string }) => link.url)).toEqual(
+      links.map((link) => new URL(link.url).toString()),
+    );
+    expect(
+      (await fixture.pool.query('select count(*)::int as count from entry_attachments')).rows[0]
+        .count,
+    ).toBe(30);
   });
 });

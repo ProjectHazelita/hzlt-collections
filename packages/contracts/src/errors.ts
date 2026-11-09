@@ -23,6 +23,8 @@ export const ErrorCodeSchema = Type.Union([
   Type.Literal('UPLOAD_NOT_READY'),
   Type.Literal('UPLOAD_EXPIRED'),
   Type.Literal('UPLOAD_ALREADY_USED'),
+  Type.Literal('FILE_TOO_LARGE'),
+  Type.Literal('INVALID_FILE'),
   Type.Literal('INTERNAL_ERROR'),
   ImageErrorCodeSchema,
 ]);
