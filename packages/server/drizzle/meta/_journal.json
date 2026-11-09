@@ -15,6 +15,13 @@
       "when": 1794233179829,
       "tag": "0001_attachments_and_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794235328314,
+      "tag": "0002_user_profiles",
+      "breakpoints": true
     }
   ]
 }

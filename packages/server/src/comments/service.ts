@@ -13,6 +13,7 @@ import { comments, entries, users } from '../db/schema.js';
 import { entryId } from '../entries/service.js';
 import { DomainError } from '../errors.js';
 import type { Database } from '../index.js';
+import { publicUserColumns, toPublicUser } from '../users.js';
 
 type CommentRow = {
   id: bigint;
@@ -20,7 +21,7 @@ type CommentRow = {
   parentId: bigint | null;
   body: string;
   createdAt: Date;
-  author: { id: string; username: string; role: 'owner' | 'member' };
+  author: User;
 };
 const invalid = (message: string): never => {
   throw new DomainError(400, 'VALIDATION_ERROR', message);
@@ -34,7 +35,7 @@ function toComment(row: CommentRow, replyTo: CommentRow | null): Comment {
     author: row.author,
     body: row.body,
     parentId: row.parentId?.toString() ?? null,
-    replyTo: replyTo ? { ...replyTo.author } : null,
+    replyTo: replyTo ? replyTo.author : null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -55,19 +56,21 @@ export class CommentService {
   async list(entry: string): Promise<CommentList> {
     const parsedId = entryId(entry);
     await this.visibleEntry(this.db, parsedId);
-    const rows = (await this.db
-      .select({
-        id: comments.id,
-        entryId: comments.entryId,
-        parentId: comments.parentId,
-        body: comments.body,
-        createdAt: comments.createdAt,
-        author: { id: users.id, username: users.username, role: users.role },
-      })
-      .from(comments)
-      .innerJoin(users, eq(users.id, comments.authorId))
-      .where(eq(comments.entryId, parsedId))
-      .orderBy(asc(comments.createdAt), asc(comments.id))) as CommentRow[];
+    const rows: CommentRow[] = (
+      await this.db
+        .select({
+          id: comments.id,
+          entryId: comments.entryId,
+          parentId: comments.parentId,
+          body: comments.body,
+          createdAt: comments.createdAt,
+          author: publicUserColumns,
+        })
+        .from(comments)
+        .innerJoin(users, eq(users.id, comments.authorId))
+        .where(eq(comments.entryId, parsedId))
+        .orderBy(asc(comments.createdAt), asc(comments.id))
+    ).map((row) => ({ ...row, author: toPublicUser(row.author) }));
     const byId = new Map(rows.map((row) => [row.id, row]));
     const children = new Map<bigint, CommentRow[]>();
     const roots: CommentRow[] = [];
@@ -115,14 +118,14 @@ export class CommentService {
             parentId: comments.parentId,
             body: comments.body,
             createdAt: comments.createdAt,
-            author: { id: users.id, username: users.username, role: users.role },
+            author: publicUserColumns,
           })
           .from(comments)
           .innerJoin(users, eq(users.id, comments.authorId))
           .where(and(eq(comments.id, BigInt(input.parentId)), eq(comments.entryId, parsedId)))
           .limit(1);
         if (!row) return notFound();
-        parent = row as CommentRow;
+        parent = { ...row, author: toPublicUser(row.author) };
       }
       const [created] = await tx
         .insert(comments)

@@ -12,7 +12,7 @@ import {
 } from '@hcl/contracts';
 import type { Database } from '../index.js';
 import type { LocalStorage } from '../storage/local-storage.js';
-import { assets, entries, entryAttachments } from '../db/schema.js';
+import { assets, entries, entryAttachments, users } from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import { withIdempotency } from '../idempotency.js';
 
@@ -129,6 +129,21 @@ export class AssetService {
       return { ...asset, kind: 'image' as const, format: asset.format as ImageFormat };
     }
     return { ...asset, kind: 'file' as const };
+  }
+
+  /** Resolve a ready image that a user has selected as their avatar. */
+  async avatar(id: string) {
+    const [asset] = await this.db
+      .select({
+        thumbnailKey: assets.thumbnailKey,
+      })
+      .from(assets)
+      .innerJoin(users, eq(users.avatarAssetId, assets.id))
+      .where(and(eq(assets.id, id), eq(assets.state, 'ready'), eq(assets.kind, 'image')))
+      .limit(1);
+    const thumbnailKey = asset?.thumbnailKey;
+    if (!thumbnailKey) throw new DomainError(404, 'NOT_FOUND', 'Avatar not found.');
+    return { thumbnailKey };
   }
 
   async get(id: string, userId: string): Promise<UploadStatus> {

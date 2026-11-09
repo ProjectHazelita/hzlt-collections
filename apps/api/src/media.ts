@@ -91,6 +91,35 @@ export async function installMedia(
         },
       );
     }
+    routes.get(
+      '/media/:assetId/avatar',
+      {
+        schema: {
+          params: MediaParamsSchema,
+          response: {
+            200: Type.Unsafe<ReadStream>({ type: 'string', format: 'binary' }),
+            '4xx': ErrorResponseSchema,
+            '5xx': ErrorResponseSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        const asset = await assets.avatar(request.params.assetId);
+        const stream = storage.read(asset.thumbnailKey);
+        try {
+          await once(stream, 'open');
+        } catch (error) {
+          stream.destroy();
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            throw new DomainError(404, 'NOT_FOUND', 'Avatar not found.');
+          }
+          throw error;
+        }
+        reply.type('image/webp');
+        reply.header('Content-Disposition', 'inline; filename="avatar.webp"');
+        return reply.send(stream);
+      },
+    );
   };
   await app.register(plugin);
 }

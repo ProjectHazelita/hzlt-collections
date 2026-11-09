@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, ne, sql } from 'drizzle-orm';
 import { sessions } from '../db/schema.js';
 import type { Database } from '../index.js';
 
@@ -106,6 +106,17 @@ export class PostgresSessionStore {
       () => callback(null),
       (error) => callback(asError(error)),
     );
+  }
+
+  async destroyForUser(userId: string, exceptSessionId?: string): Promise<void> {
+    await this.db
+      .delete(sessions)
+      .where(
+        and(
+          sql`${sessions.payload}->>'userId' = ${userId}`,
+          exceptSessionId ? ne(sessions.storeId, exceptSessionId) : undefined,
+        ),
+      );
   }
 
   private async read(id: string): Promise<SessionPayload | null> {

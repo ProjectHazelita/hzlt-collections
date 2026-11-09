@@ -13,6 +13,8 @@ const fixedRoutes = [
   '/search',
   '/login',
   '/register',
+  '/settings',
+  '/settings/profile',
   '/settings/content',
 ];
 const assetExtensions: Record<string, true> = {

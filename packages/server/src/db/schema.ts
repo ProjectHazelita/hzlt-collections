@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -21,13 +22,17 @@ export const users = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     username: text('username').notNull(),
     usernameKey: text('username_key').notNull().unique(),
+    displayName: text('display_name').notNull(),
+    avatarAssetId: uuid('avatar_asset_id').references((): AnyPgColumn => assets.id),
     passwordHash: text('password_hash').notNull(),
     role: text('role').$type<'owner' | 'member'>().notNull(),
     createdAt: time('created_at').notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('single_owner').on(t.role).where(sql`${t.role} = 'owner'`),
+    uniqueIndex('users_avatar_asset_unique').on(t.avatarAssetId),
     check('valid_role', sql`${t.role} in ('owner','member')`),
+    check('valid_display_name', sql`char_length(${t.displayName}) between 1 and 32`),
   ],
 );
 export const sessions = pgTable(
@@ -46,7 +51,7 @@ export const assets = pgTable(
     id: uuid('id').primaryKey(),
     ownerId: uuid('owner_id')
       .notNull()
-      .references(() => users.id),
+      .references((): AnyPgColumn => users.id),
     kind: text('kind').$type<'image' | 'file'>().notNull().default('image'),
     state: text('state').$type<'pending' | 'ready' | 'failed' | 'deleted'>().notNull(),
     originalKey: text('original_key').notNull(),

@@ -36,6 +36,7 @@ import {
 import { DomainError } from '../errors.js';
 import { hashInput, type Transaction, withIdempotency } from '../idempotency.js';
 import type { Database } from '../index.js';
+import { publicUserColumns, toPublicUser } from '../users.js';
 
 type Reader = Pick<Database, 'select'>;
 type NormalizedTag = { name: string; normalizedName: string };
@@ -224,7 +225,7 @@ export class EntryService {
     const rows = await db
       .select({
         entry: entries,
-        author: { id: users.id, username: users.username, role: users.role },
+        author: publicUserColumns,
       })
       .from(entries)
       .innerJoin(users, eq(users.id, entries.authorId))
@@ -320,7 +321,7 @@ export class EntryService {
       const bundle = attachmentsMap.get(entry.id) ?? { images: [], files: [], links: [] };
       result.set(entry.id, {
         id: entry.id.toString(),
-        author,
+        author: toPublicUser(author),
         title: entry.title,
         body: entry.body,
         tags: tagMap.get(entry.id) ?? [],
@@ -423,6 +424,11 @@ export class EntryService {
       .select({ assetId: entryAttachments.assetId, entryId: entryAttachments.entryId })
       .from(entryAttachments)
       .where(inArray(entryAttachments.assetId, ids));
+    const usedAsAvatar = await tx
+      .select({ assetId: users.avatarAssetId })
+      .from(users)
+      .where(inArray(users.avatarAssetId, ids));
+    if (usedAsAvatar.length) return invalid('头像图片不能作为条目附件。');
     const usedByOther = new Set<string>();
     const attachedToCurrent = new Set<string>();
     for (const row of used) {

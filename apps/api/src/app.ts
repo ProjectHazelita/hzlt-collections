@@ -47,7 +47,7 @@ export async function buildApp(
       servers: [{ url: config.publicOrigin }],
     },
   });
-  await installAuth(app, { db, config });
+  await installAuth(app, { db, config, boss });
   await installEntries(app, { db, boss });
   await installComments(app, { db });
   await installUploads(app, { db, boss, storage, config });

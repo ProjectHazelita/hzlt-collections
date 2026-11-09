@@ -93,6 +93,8 @@ describe('production web build over real HTTP', () => {
       '/search?q=%E4%B8%AD%E6%96%87',
       '/login',
       '/register',
+      '/settings',
+      '/settings/profile',
       '/settings/content',
     ]) {
       const response = await request(address, route, 'GET', 'application/json, text/html;q=0.8');

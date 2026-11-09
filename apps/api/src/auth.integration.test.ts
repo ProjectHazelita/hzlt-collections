@@ -27,7 +27,7 @@ describe('PostgreSQL authentication and session boundaries', () => {
     ]);
     await expect(
       fixture.pool.query(
-        "insert into users (username, username_key, password_hash, role) values ('illegal', 'illegal', 'irrelevant', 'owner')",
+        "insert into users (username, username_key, display_name, password_hash, role) values ('illegal', 'illegal', 'illegal', 'irrelevant', 'owner')",
       ),
     ).rejects.toMatchObject({ code: '23505' });
   }, 30_000);

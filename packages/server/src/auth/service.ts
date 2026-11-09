@@ -1,9 +1,10 @@
-import type { AuthInput, User } from '@hcl/contracts';
+import type { AuthInput, PasswordChangeInput, User } from '@hcl/contracts';
 import * as argon2 from 'argon2';
 import { eq, sql } from 'drizzle-orm';
 import { users } from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import type { Database } from '../index.js';
+import { publicUserColumns, toPublicUser } from '../users.js';
 
 const argonOptions: argon2.HashOptions = {
   type: argon2.argon2id,
@@ -81,7 +82,7 @@ function isUsernameConflict(error: unknown): boolean {
   return false;
 }
 
-const publicUser = { id: users.id, username: users.username, role: users.role };
+const publicUser = publicUserColumns;
 
 export class AuthService {
   constructor(private readonly db: Database) {}
@@ -99,12 +100,13 @@ export class AuthService {
           .values({
             username,
             usernameKey,
+            displayName: username,
             passwordHash,
             role: existing ? 'member' : 'owner',
           })
           .returning(publicUser);
         if (!user) throw new Error('User insertion returned no row');
-        return user;
+        return toPublicUser(user);
       });
     } catch (error) {
       if (isUsernameConflict(error)) {
@@ -126,11 +128,42 @@ export class AuthService {
     const hash = user ? user.passwordHash : DUMMY_PHC;
     const matches = await passwordTask(() => argon2.verify(hash, password));
     if (!user || !matches) throw new DomainError(401, 'INVALID_CREDENTIALS', '用户名或密码错误。');
-    return { id: user.id, username: user.username, role: user.role };
+    return toPublicUser(user);
   }
 
   async getUser(id: string): Promise<User | null> {
     const [user] = await this.db.select(publicUser).from(users).where(eq(users.id, id)).limit(1);
-    return user ?? null;
+    return user ? toPublicUser(user) : null;
+  }
+
+  async changePassword(id: string, input: PasswordChangeInput): Promise<User> {
+    const passwordLength = Array.from(input.newPassword).length;
+    if (passwordLength < 12 || passwordLength > 128) {
+      throw new DomainError(400, 'VALIDATION_ERROR', '密码须为 12–128 个字符。', {
+        newPassword: '密码须为 12–128 个字符，空格不会被移除。',
+      });
+    }
+    const [user] = await this.db
+      .select({ ...publicUser, passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+    if (!user) throw new DomainError(404, 'NOT_FOUND', '账号不存在。');
+    const matches = await passwordTask(() =>
+      argon2.verify(user.passwordHash, input.currentPassword),
+    );
+    if (!matches) {
+      throw new DomainError(400, 'VALIDATION_ERROR', '当前密码不正确。', {
+        currentPassword: '当前密码不正确。',
+      });
+    }
+    const passwordHash = await passwordTask(() => argon2.hash(input.newPassword, argonOptions));
+    const [updated] = await this.db
+      .update(users)
+      .set({ passwordHash })
+      .where(eq(users.id, id))
+      .returning(publicUser);
+    if (!updated) throw new Error('Password update returned no row');
+    return toPublicUser(updated);
   }
 }

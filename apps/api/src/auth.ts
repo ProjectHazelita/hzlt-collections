@@ -3,13 +3,23 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import session from '@fastify/session';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
-import { AuthInputSchema, type Session, SessionSchema, type User } from '@hcl/contracts';
+import {
+  AuthInputSchema,
+  ErrorResponseSchema,
+  PasswordChangeInputSchema,
+  ProfileInputSchema,
+  type Session,
+  SessionSchema,
+  UnsafeRequestHeadersSchema,
+  type User,
+} from '@hcl/contracts';
 import {
   AuthService,
   type Config,
   type Database,
   DomainError,
   PostgresSessionStore,
+  ProfileService,
 } from '@hcl/server';
 import type {
   FastifyInstance,
@@ -17,6 +27,7 @@ import type {
   FastifyRequest,
   Session as StoredSession,
 } from 'fastify';
+import type { PgBoss } from 'pg-boss';
 
 declare module 'fastify' {
   interface Session {
@@ -55,9 +66,10 @@ function sameToken(actual: string | string[] | undefined, expected: string | und
 /** Install on the application scope before registering any routes that use authentication. */
 export async function installAuth(
   app: FastifyInstance,
-  { db, config }: { db: Database; config: Config },
+  { db, config, boss }: { db: Database; config: Config; boss: PgBoss },
 ): Promise<void> {
   const auth = new AuthService(db);
+  const profile = new ProfileService(db, boss);
   const store = new PostgresSessionStore(db);
   const expiredRequests = new WeakSet<FastifyRequest>();
   const secure = new URL(config.publicOrigin).protocol === 'https:';
@@ -176,6 +188,7 @@ export async function installAuth(
   }
 
   const routes = app.withTypeProvider<TypeBoxTypeProvider>();
+  const errors = { '4xx': ErrorResponseSchema, '5xx': ErrorResponseSchema };
   routes.get(
     '/api/v1/auth/session',
     { schema: { response: { 200: SessionSchema } } },
@@ -233,4 +246,44 @@ export async function installAuth(
     reply.header('Cache-Control', 'no-store');
     return reply.clearCookie(COOKIE_NAME, cookieOptions).code(204).send();
   });
+
+  routes.patch(
+    '/api/v1/me/profile',
+    {
+      schema: {
+        headers: UnsafeRequestHeadersSchema,
+        body: ProfileInputSchema,
+        response: { 200: SessionSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      const user = await profile.update(request.requireUser().id, request.body);
+      request.currentUser = user;
+      return { user, csrfToken: request.session.csrfToken! };
+    },
+  );
+
+  routes.put(
+    '/api/v1/me/password',
+    {
+      config: { rateLimit: { max: 5, timeWindow: 15 * 60 * 1000 } },
+      schema: {
+        headers: UnsafeRequestHeadersSchema,
+        body: PasswordChangeInputSchema,
+        response: { 200: SessionSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      const user = await auth.changePassword(request.requireUser().id, request.body);
+      await store.destroyForUser(user.id, request.session.sessionStoreId);
+      const csrfToken = newToken();
+      request.session.csrfToken = csrfToken;
+      request.session.authExpiresAt = Date.now() + config.sessionTtlSeconds * 1000;
+      request.session.cookie.maxAge = config.sessionTtlSeconds * 1000;
+      request.currentUser = user;
+      return { user, csrfToken };
+    },
+  );
 }
