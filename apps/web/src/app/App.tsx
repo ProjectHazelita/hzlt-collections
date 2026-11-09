@@ -131,32 +131,6 @@ function AccountArea() {
           <p className="account-role">
             @{user.username} · {user.role === 'owner' ? '站点所有者' : '注册用户'}
           </p>
-          <Link
-            className="menu-button"
-            role="menuitem"
-            to="/settings/profile"
-            onClick={() => setOpen(false)}
-          >
-            个人设置
-          </Link>
-          <Link
-            className="menu-button"
-            role="menuitem"
-            to="/publish"
-            onClick={() => setOpen(false)}
-          >
-            发布条目
-          </Link>
-          {user.role === 'owner' && (
-            <Link
-              className="menu-button"
-              role="menuitem"
-              to="/settings/content"
-              onClick={() => setOpen(false)}
-            >
-              站点管理
-            </Link>
-          )}
           <button
             className="menu-button"
             type="button"

@@ -61,14 +61,18 @@ export function ContentManagement() {
 
   return (
     <section className="content-management" aria-labelledby="management-title">
-      <h1 id="management-title" className="page-heading">
-        站点管理
-      </h1>
-      <p className="muted">owner · 管理全站内容；编辑正文和标签仍由作者完成。</p>
-      <div className="management-summary" aria-live="polite">
-        <span className="management-summary-title">内容管理</span>
-        <span>全部条目 {total === undefined ? '—' : total.toLocaleString()}</span>
-        <span>公开注册已开放</span>
+      <header className="management-heading">
+        <h1 id="management-title">站点管理</h1>
+        <p>owner · 管理全站内容；编辑正文和标签仍由作者完成。</p>
+      </header>
+      <div className="management-toolbar" aria-live="polite">
+        <h2>
+          全部条目 <span>{total === undefined ? '—' : total.toLocaleString()}</span>
+        </h2>
+        <span className="management-registration">
+          <span className="management-status-dot" aria-hidden="true" />
+          公开注册已开放
+        </span>
       </div>
       {authorized && query.isPending && (
         <p role="status" className="muted">
@@ -119,35 +123,24 @@ export function ContentManagement() {
                 <tr key={entry.id}>
                   <td>
                     <div className="management-entry">
-                      {entry.images[0] && (
-                        <img
-                          src={entry.images[0].thumbnailUrl}
-                          alt=""
-                          width={56}
-                          height={56}
-                          loading="lazy"
-                        />
-                      )}
-                      <div className="management-entry-copy">
-                        <Link className="management-entry-title" to={`/entries/${entry.id}`}>
-                          {entry.title ||
-                            entry.body ||
-                            entry.files[0]?.name ||
-                            entry.links[0]?.host ||
-                            `条目 #${entry.id}`}
-                        </Link>
-                        <span className="muted">
-                          #{entry.id} ·{' '}
-                          {[
-                            entry.images.length ? '图片' : '',
-                            entry.files.length ? '文件' : '',
-                            entry.links.length ? '链接' : '',
-                          ]
-                            .filter(Boolean)
-                            .join('、') || '文字'}{' '}
-                          · 公开
-                        </span>
-                      </div>
+                      <Link className="management-entry-title" to={`/entries/${entry.id}`}>
+                        {entry.title ||
+                          entry.body ||
+                          entry.files[0]?.name ||
+                          entry.links[0]?.host ||
+                          `条目 #${entry.id}`}
+                      </Link>
+                      <span className="management-entry-meta">
+                        #{entry.id} ·{' '}
+                        {[
+                          entry.images.length ? '图片' : '',
+                          entry.files.length ? '文件' : '',
+                          entry.links.length ? '链接' : '',
+                        ]
+                          .filter(Boolean)
+                          .join('、') || '文字'}{' '}
+                        · 公开
+                      </span>
                     </div>
                   </td>
                   <td>
@@ -166,7 +159,7 @@ export function ContentManagement() {
                   <td>
                     <div className="management-actions">
                       <Link
-                        className="secondary"
+                        className="management-action"
                         to={`/entries/${entry.id}`}
                         aria-label={`查看条目 #${entry.id}`}
                       >
@@ -175,7 +168,7 @@ export function ContentManagement() {
                       {entry.canDelete && (
                         <button
                           type="button"
-                          className="secondary management-delete"
+                          className="management-action management-delete"
                           aria-label={`删除条目 #${entry.id}`}
                           onClick={() => {
                             if (identityEpoch === auth.epoch.current)
