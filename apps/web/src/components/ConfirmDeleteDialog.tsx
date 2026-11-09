@@ -52,10 +52,10 @@ export function ConfirmDeleteDialog({
       }}
     >
       <div className="delete-dialog-content">
-        <h2 id="delete-title">{entry?.asset ? '删除这条内容？' : '删除这条文字？'}</h2>
+        <h2 id="delete-title">删除这条内容？</h2>
         <p>
-          {entry?.asset
-            ? '删除后不可恢复。条目及关联图片将不再可访问。'
+          {entry?.images.length || entry?.files.length || entry?.links.length
+            ? '删除后不可恢复。条目及关联图片、文件将不再可访问。'
             : '删除后不可恢复。确认删除这条文字内容吗？'}
         </p>
         {error && (

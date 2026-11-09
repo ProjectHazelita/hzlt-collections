@@ -40,6 +40,7 @@
   height: 32px;
   border-radius: 8px;
   flex: none;
+  transition: background-color 160ms ease;
 }
 .composer-back:hover {
   background: var(--bg-subtle);
@@ -65,155 +66,25 @@
 .composer-layout {
   display: flex;
   gap: 24px;
-  align-items: stretch;
+  align-items: flex-start;
   min-width: 0;
 }
-.composer-preview {
+.composer-editor {
   flex: 1;
   min-width: 0;
-  min-height: 704px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 24px;
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  background: var(--bg-subtle);
-}
-.composer-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 36px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--text-secondary);
-}
-.composer-status-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.composer-small {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 8px;
   background: var(--bg-page);
-  font-size: 12px;
-  line-height: 18px;
-}
-.composer-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.composer-image {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.composer-image img {
-  max-width: 100%;
-  max-height: 570px;
-  border-radius: 8px;
-  object-fit: contain;
-}
-.composer-badges {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  gap: 8px;
-}
-.composer-badges span {
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--action-primary);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.composer-upload-failed {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-.composer-notice {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  padding: 12px 16px;
-  border: 1px solid var(--feedback-error);
-  border-radius: 8px;
-  background: var(--bg-subtle);
-}
-.composer-notice p:first-child {
-  color: var(--feedback-error);
-  font-size: 14px;
-  line-height: 22px;
-}
-.composer-notice p:last-child {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 19px;
-}
-.composer-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  text-align: center;
-}
-.composer-empty-title {
-  font-size: 24px;
-  line-height: 38px;
-}
-.composer-empty-note {
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--text-primary);
-}
-.composer-file-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 18px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--text-secondary);
-}
-.composer-hint {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--text-secondary);
-}
-.composer-warning {
-  font-size: 12px;
-  line-height: 19px;
-  color: var(--text-secondary);
 }
 .composer-panel {
   flex: 0 0 448px;
   width: 448px;
   min-width: 0;
   margin: 0;
-  min-height: 704px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -234,12 +105,14 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 20px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 20px;
+  font-weight: 500;
 }
 .composer-label .composer-hint {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
+  font-weight: 400;
 }
 .composer-field > input,
 .composer-field > textarea {
@@ -250,18 +123,302 @@
   padding: 0 12px;
   font-size: 14px;
   line-height: 22px;
+  transition:
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 .composer-field > input {
   height: 44px;
 }
 .composer-field > textarea {
-  min-height: 144px;
+  min-height: 188px;
   padding: 12px;
   line-height: 20px;
   resize: vertical;
 }
 .composer-field > input::placeholder,
 .composer-field > textarea::placeholder {
+  color: var(--text-secondary);
+}
+.composer-field > input:focus-visible,
+.composer-field > textarea:focus-visible {
+  outline: 2px solid var(--action-primary);
+  outline-offset: 0;
+}
+.composer-attach-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.composer-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-page);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-primary);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+.composer-attach:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  transform: translateY(-1px);
+}
+.composer-attach:active:not(:disabled) {
+  transform: translateY(0);
+}
+.composer-attach svg {
+  color: var(--icon-muted);
+}
+.composer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.composer-attachments,
+.composer-attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--bg-subtle);
+  animation: attachment-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.composer-attachment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  font-size: 14px;
+  line-height: 24px;
+}
+.composer-attachment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.composer-text-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-primary);
+  transition: background-color 160ms ease;
+}
+.composer-text-button.framed {
+  background: var(--bg-page);
+}
+.composer-text-button:hover:not(:disabled) {
+  background: var(--bg-page);
+}
+.composer-text-button.framed:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+.composer-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+.composer-image-grid.single {
+  display: flex;
+  justify-content: center;
+}
+.composer-image-grid.single .composer-image-tile {
+  width: min(100%, 420px);
+}
+.composer-image-tile {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.composer-image-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--bg-page);
+  overflow: hidden;
+}
+.composer-image-frame img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.composer-image-badges {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.composer-image-badges span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgb(76 79 105 / 80%);
+  color: #fff;
+  font-size: 10px;
+  line-height: 15px;
+}
+.composer-image-status {
+  position: absolute;
+  inset: auto 8px 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(76 79 105 / 78%);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+.composer-image-status.error {
+  background: rgb(210 15 57 / 88%);
+}
+.composer-image-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 88%);
+  color: var(--text-primary);
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+.composer-image-tile:hover .composer-image-remove,
+.composer-image-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.composer-image-tile figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.composer-image-tile figcaption span:first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-item-error {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--feedback-error);
+}
+.composer-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-page);
+}
+.composer-file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+.composer-file-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.composer-file-name {
+  font-size: 16px;
+  line-height: 24px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer-file-meta {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+.composer-link-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-page);
+}
+.composer-link-row input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 14px;
+  line-height: 24px;
+}
+.composer-link-row input:focus-visible {
+  outline: none;
+}
+.composer-counts {
+  align-self: flex-end;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+.composer-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-secondary);
+}
+.composer-summary span:first-child {
+  color: var(--text-primary);
+}
+.composer-hint {
+  font-size: 12px;
+  line-height: 18px;
   color: var(--text-secondary);
 }
 .composer-tags {
@@ -312,6 +469,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   background: var(--bg-page);
+  box-shadow: var(--dialog-shadow);
+  animation: pop-in 160ms ease both;
 }
 .composer-tag-picker:focus-within {
   border-color: var(--action-primary);
@@ -361,6 +520,13 @@
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+.composer-attribute:hover {
+  border-color: var(--bg-subtle);
+  background: var(--bg-subtle);
 }
 .composer-attribute input {
   width: 20px;
@@ -376,11 +542,12 @@
   min-width: 0;
 }
 .composer-attribute-name {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 20px;
+  font-weight: 500;
 }
 .composer-attribute-text .composer-hint {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
 }
 .composer-sr-only {
@@ -394,17 +561,25 @@
   white-space: nowrap;
   border: 0;
 }
+@keyframes attachment-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
 @media (max-width: 1100px) {
   .composer-layout {
     flex-direction: column;
   }
-  .composer-preview {
-    min-height: 420px;
-  }
   .composer-panel {
     flex: 1 1 auto;
     width: 100%;
-    min-height: 0;
   }
 }
 @media (max-width: 767px) {
@@ -430,21 +605,19 @@
   .composer-layout {
     gap: 16px;
   }
-  .composer-preview {
-    min-height: 0;
-    padding: 12px;
-    gap: 12px;
-  }
-  .composer-status {
-    min-height: 19px;
-    font-size: 12px;
-  }
-  .composer-image img {
-    max-height: 188px;
-    width: 100%;
-  }
+  .composer-editor,
   .composer-panel {
-    padding: 24px;
-    gap: 24px;
+    padding: 16px;
+    border-radius: 16px;
+  }
+  .composer-image-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .composer-image-remove {
+    opacity: 1;
+    transform: none;
+  }
+  .composer-field > textarea {
+    min-height: 160px;
   }
 }

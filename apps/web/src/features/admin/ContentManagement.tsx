@@ -66,8 +66,9 @@ export function ContentManagement() {
       </h1>
       <p className="muted">owner · 管理全站内容；编辑正文和标签仍由作者完成。</p>
       <div className="management-summary" aria-live="polite">
-        <span>全站条目</span>
-        <strong>{total === undefined ? '—' : total.toLocaleString()}</strong>
+        <span className="management-summary-title">内容管理</span>
+        <span>全部条目 {total === undefined ? '—' : total.toLocaleString()}</span>
+        <span>公开注册已开放</span>
       </div>
       {authorized && query.isPending && (
         <p role="status" className="muted">
@@ -118,9 +119,9 @@ export function ContentManagement() {
                 <tr key={entry.id}>
                   <td>
                     <div className="management-entry">
-                      {entry.asset && (
+                      {entry.images[0] && (
                         <img
-                          src={entry.asset.thumbnailUrl}
+                          src={entry.images[0].thumbnailUrl}
                           alt=""
                           width={56}
                           height={56}
@@ -129,10 +130,22 @@ export function ContentManagement() {
                       )}
                       <div className="management-entry-copy">
                         <Link className="management-entry-title" to={`/entries/${entry.id}`}>
-                          {entry.title || entry.body || `图片条目 #${entry.id}`}
+                          {entry.title ||
+                            entry.body ||
+                            entry.files[0]?.name ||
+                            entry.links[0]?.host ||
+                            `条目 #${entry.id}`}
                         </Link>
                         <span className="muted">
-                          #{entry.id} · {entry.asset ? '图片' : '文字'} · 公开
+                          #{entry.id} ·{' '}
+                          {[
+                            entry.images.length ? '图片' : '',
+                            entry.files.length ? '文件' : '',
+                            entry.links.length ? '链接' : '',
+                          ]
+                            .filter(Boolean)
+                            .join('、') || '文字'}{' '}
+                          · 公开
                         </span>
                       </div>
                     </div>

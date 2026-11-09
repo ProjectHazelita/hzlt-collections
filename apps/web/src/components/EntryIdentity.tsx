@@ -1,5 +1,6 @@
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+import { copyText } from '../app/clipboard';
 
 export function EntryIdentity({
   id,
@@ -12,28 +13,7 @@ export function EntryIdentity({
   const [fallback, setFallback] = useState(false);
   const url = new URL(`/entries/${id}`, location.origin).href;
   async function copy() {
-    let success = false;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        success = true;
-      }
-    } catch {
-      /* HTTP and denied permission use the actual legacy copy operation. */
-    }
-    if (!success) {
-      const field = document.createElement('textarea');
-      field.value = url;
-      field.style.position = 'fixed';
-      field.style.opacity = '0';
-      document.body.append(field);
-      field.select();
-      try {
-        success = document.execCommand('copy');
-      } finally {
-        field.remove();
-      }
-    }
+    const success = await copyText(url);
     setFallback(!success);
     setCopied(success);
     if (success) window.setTimeout(() => setCopied(false), 2000);

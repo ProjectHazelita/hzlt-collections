@@ -1,13 +1,28 @@
 import type { Entry } from '@hcl/contracts';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FileText, Link2, MoreHorizontal } from 'lucide-react';
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
-import { EntryIdentity } from './EntryIdentity';
+import { copyText } from '../app/clipboard';
 
-export function AttributeBadges({ entry, overlay = false }: { entry: Entry; overlay?: boolean }) {
+export function AttributeBadges({
+  entry,
+  overlay = false,
+  longImage = false,
+  count,
+}: {
+  entry: Entry;
+  overlay?: boolean;
+  longImage?: boolean;
+  count?: number;
+}) {
+  const any = entry.declarations.nsfw || entry.declarations.aiGenerated || longImage || count;
+  if (!any) return null;
   return (
     <div className={overlay ? 'attribute-badges overlay' : 'attribute-badges'}>
       {entry.declarations.nsfw && <span>NSFW</span>}
       {entry.declarations.aiGenerated && <span>AI 生成</span>}
+      {longImage && <span>长图</span>}
+      {count && count > 1 ? <span>{count} 张图片</span> : null}
     </div>
   );
 }
@@ -21,6 +36,84 @@ export function Author({ entry, detail = false }: { entry: Entry; detail?: boole
   );
 }
 
+function CardMenu({ entry }: { entry: Entry }) {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const slot = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!slot.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <span className="card-menu-slot" ref={slot}>
+      <button
+        type="button"
+        className="card-more"
+        aria-label="条目操作"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <MoreHorizontal size={20} />
+      </button>
+      {open && (
+        <span className="card-menu" role="menu" aria-label={`条目 #${entry.id} 操作`}>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void copyText(new URL(`/entries/${entry.id}`, window.location.origin).href).then(
+                (success) => {
+                  setCopied(success);
+                  if (success) window.setTimeout(() => setCopied(false), 2000);
+                },
+              );
+            }}
+          >
+            {copied ? '链接已复制' : '复制条目链接'}
+          </button>
+          {entry.canEdit && (
+            <Link
+              role="menuitem"
+              to={`/entries/${entry.id}/edit`}
+              state={{ backgroundLocation: location }}
+              onClick={() => setOpen(false)}
+            >
+              编辑条目
+            </Link>
+          )}
+          <Link
+            role="menuitem"
+            to={`/entries/${entry.id}`}
+            state={{ backgroundLocation: location }}
+            onClick={() => setOpen(false)}
+          >
+            打开详情
+          </Link>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function EntryCard({
   entry,
   onMeasure,
@@ -30,6 +123,10 @@ function EntryCard({
 }) {
   const location = useLocation();
   const card = useRef<HTMLElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  const bodyWrap = useRef<HTMLDivElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [fadeHeight, setFadeHeight] = useState(0);
   useLayoutEffect(() => {
     const element = card.current;
     if (!element) return;
@@ -39,52 +136,108 @@ function EntryCard({
     observer.observe(element);
     return () => observer.disconnect();
   }, [entry.id, onMeasure]);
-  const asset = entry.asset;
-  const tall = asset ? asset.height / asset.width > 2.5 : false;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Recheck truncation when the card text changes.
+  useLayoutEffect(() => {
+    const element = surface.current;
+    if (!element) return;
+    let active = true;
+    const check = () => {
+      if (active) setTruncated(element.scrollHeight > element.clientHeight + 1);
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    void document.fonts?.ready.then(check);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [entry.title, entry.body]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Recompute the visible band when the card text changes.
+  useLayoutEffect(() => {
+    const element = surface.current;
+    const wrap = bodyWrap.current;
+    if (!truncated || !element || !wrap) {
+      setFadeHeight(0);
+      return;
+    }
+    setFadeHeight(Math.max(0, element.clientHeight - wrap.offsetTop));
+  }, [truncated, entry.title, entry.body]);
+  const image = entry.images[0];
+  const tall = image ? image.height / image.width > 2.5 : false;
+  const title = entry.title;
   return (
     <article ref={card} className="entry-card">
       <Link
         className="card-main"
         to={`/entries/${entry.id}`}
         state={{ backgroundLocation: location }}
-        aria-label={entry.title ?? (entry.body.slice(0, 60) || `查看条目 #${entry.id}`)}
+        aria-label={title ?? (entry.body.slice(0, 60) || `查看条目 #${entry.id}`)}
       >
-        {asset ? (
+        {image ? (
           <div className={tall ? 'card-image long-image' : 'card-image'}>
             <img
-              src={asset.thumbnailUrl}
-              alt={entry.title ?? ''}
-              width={asset.width}
-              height={asset.height}
+              src={image.thumbnailUrl}
+              alt={title ?? ''}
+              width={image.width}
+              height={image.height}
               loading="lazy"
             />
-            {tall && <span className="long-image-label">长图</span>}
-            <AttributeBadges entry={entry} overlay />
-            {(entry.title || entry.tags.length > 0) && (
-              <div className="card-overlay">
-                {entry.title && <span className="card-overlay-title">{entry.title}</span>}
-                {entry.tags.length > 0 && (
-                  <div className="card-tags">
-                    {entry.tags.map((tag) => (
-                      <span key={tag}># {tag}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <AttributeBadges entry={entry} overlay longImage={tall} count={entry.images.length} />
+            <div className="card-overlay">
+              <span className="card-overlay-title">
+                {title || entry.body.split('\n', 1)[0] || `条目 #${entry.id}`}
+              </span>
+            </div>
+          </div>
+        ) : entry.files.length || entry.links.length ? (
+          <div className="text-card-content attachment-card">
+            <div className="card-attachment-kinds">
+              {entry.files.length > 0 && (
+                <span>
+                  <FileText size={14} /> 文件 · {entry.files.length}
+                </span>
+              )}
+              {entry.links.length > 0 && (
+                <span>
+                  <Link2 size={14} /> 链接 · {entry.links.length}
+                </span>
+              )}
+            </div>
+            {title && <h2>{title}</h2>}
+            <p className="text-card-body">
+              {entry.body || entry.files[0]?.name || entry.links[0]?.host || ''}
+            </p>
+            <AttributeBadges entry={entry} />
           </div>
         ) : (
           <div className="text-card-content">
-            {entry.title && <h2>{entry.title}</h2>}
-            <p>{entry.body}</p>
-            {entry.body.length > 160 && <span className="read-more">阅读全文</span>}
+            <div
+              className="text-card-surface"
+              ref={surface}
+              style={
+                fadeHeight ? ({ '--visible-body': `${fadeHeight}px` } as CSSProperties) : undefined
+              }
+            >
+              {title && <h2>{title}</h2>}
+              <div className="text-card-body-wrap" ref={bodyWrap}>
+                <p className={truncated && fadeHeight ? 'text-card-body fading' : 'text-card-body'}>
+                  {entry.body}
+                </p>
+                {truncated && fadeHeight > 0 && (
+                  <p className="text-card-body text-card-blur" aria-hidden="true">
+                    {entry.body}
+                  </p>
+                )}
+              </div>
+            </div>
             <AttributeBadges entry={entry} />
           </div>
         )}
       </Link>
       <div className="card-metadata">
         <Author entry={entry} />
-        <EntryIdentity id={entry.id} variant="card" />
+        <CardMenu entry={entry} />
       </div>
     </article>
   );
@@ -145,9 +298,12 @@ export function MasonryFeed({ entries }: { entries: Entry[] }) {
   for (const entry of entries.slice(appendOnly ? state.ids.length : 0)) {
     const column = heights.indexOf(Math.min(...heights));
     columns[column]!.push(entry);
-    const estimated = entry.asset
-      ? columnWidth * Math.min(entry.asset.height / entry.asset.width, 2.5) + 60
-      : Math.min(8, Math.ceil(entry.body.length / Math.max(8, columnWidth / 7))) * 22 + 88;
+    const first = entry.images[0];
+    const estimated = first
+      ? columnWidth * Math.min(first.height / first.width, 2.5) + 60
+      : entry.files.length || entry.links.length
+        ? 160
+        : Math.min(8, Math.ceil(entry.body.length / Math.max(8, columnWidth / 7))) * 22 + 88;
     heights[column]! += (measurements.current.get(entry.id) ?? estimated) + 16;
   }
   previous.current = {

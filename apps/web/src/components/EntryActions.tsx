@@ -60,13 +60,18 @@ export function EntryActions({
   }
   const label = entry.likedByMe ? '已喜欢' : '喜欢';
   const download =
-    variant === 'image' && entry.asset ? (
+    variant === 'image' && entry.images[0] ? (
       mobile ? (
-        <a className="tool-button tool-button-label" href={entry.asset.downloadUrl} download>
+        <a className="tool-button tool-button-label" href={entry.images[0].downloadUrl} download>
           下载原图
         </a>
       ) : (
-        <a className="tool-button" href={entry.asset.downloadUrl} download aria-label="下载原图">
+        <a
+          className="tool-button"
+          href={entry.images[0].downloadUrl}
+          download
+          aria-label="下载原图"
+        >
           <Download size={20} />
         </a>
       )
@@ -111,7 +116,7 @@ export function EntryActions({
                 to={`/entries/${entry.id}/edit`}
                 onClick={() => setMenu(false)}
               >
-                编辑文字和标签
+                编辑条目与附件
               </Link>
             )}
             {entry.canDelete && (
