@@ -44,7 +44,7 @@ export async function buildApp(
   installErrors(app);
   await app.register(swagger, {
     openapi: {
-      info: { title: 'hzlt!Collections API', version: '0.1.0-dev.0' },
+      info: { title: 'hzlt!Collections API', version: '0.1.0' },
       servers: [{ url: config.publicOrigin }],
     },
   });
