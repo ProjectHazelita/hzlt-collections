@@ -1,6 +1,7 @@
 import type {
   Entry,
   EntryInput,
+  EntryModeration,
   EntryPatch,
   TagsResponse,
   UploadAccepted,
@@ -257,6 +258,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [entry, setEntry] = useState<Entry | null>(null);
+  const [moderation, setModeration] = useState<EntryModeration | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
   const [loadError, setLoadError] = useState('');
   const [loadRetry, setLoadRetry] = useState(0);
@@ -332,10 +334,14 @@ function ComposerForm({ id }: { id: string | undefined }) {
     const captured = epoch.current;
     setLoading(true);
     setLoadError('');
-    void request<Entry>(`/api/v1/entries/${encodeURIComponent(id)}`, { signal: controller.signal })
-      .then((next) => {
+    void request<{ entry: Entry; moderation: EntryModeration }>(
+      `/api/v1/admin/entries/${encodeURIComponent(id)}`,
+      { signal: controller.signal },
+    )
+      .then(({ entry: next, moderation: restrictions }) => {
         if (controller.signal.aborted || captured !== epoch.current) return;
         setEntry(next);
+        setModeration(restrictions);
         setTitle(next.title ?? '');
         setBody(next.body);
         setTags(next.tags);
@@ -679,6 +685,36 @@ function ComposerForm({ id }: { id: string | undefined }) {
 
   return (
     <section className="composer-page">
+      {moderation &&
+        (moderation.hidden ||
+          moderation.titleHidden ||
+          moderation.bodyHidden ||
+          moderation.hiddenImageIds.length > 0 ||
+          moderation.hiddenFileIds.length > 0 ||
+          moderation.hiddenLinkUrls.length > 0) && (
+          <aside className="settings-card" role="status">
+            <h2>此条目存在管理限制</h2>
+            <p>
+              这里显示原始内容供你编辑。保存修改不会自动解除隐藏限制，删除后重新添加相同附件或链接也不会解除限制。
+            </p>
+            <p>
+              {[
+                moderation.hidden && '整条已隐藏',
+                moderation.titleHidden && '标题已隐藏',
+                moderation.bodyHidden && '正文已隐藏',
+                moderation.hiddenImageIds.length > 0 &&
+                  `${moderation.hiddenImageIds.length} 张图片已隐藏`,
+                moderation.hiddenFileIds.length > 0 &&
+                  `${moderation.hiddenFileIds.length} 个文件已隐藏`,
+                moderation.hiddenLinkUrls.length > 0 &&
+                  `${moderation.hiddenLinkUrls.length} 个链接已隐藏`,
+              ]
+                .filter(Boolean)
+                .join('；')}
+            </p>
+            {moderation.reason && <p>原因：{moderation.reason}</p>}
+          </aside>
+        )}
       <form className="composer-workspace" onSubmit={submit}>
         <header className="composer-header">
           <div className="composer-heading">

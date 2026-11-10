@@ -198,6 +198,29 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
     </button>
   );
 
+  const moderationNotice =
+    entry?.moderation &&
+    (entry.moderation.titleHidden ||
+      entry.moderation.bodyHidden ||
+      entry.moderation.hiddenImageCount > 0 ||
+      entry.moderation.hiddenFileCount > 0 ||
+      entry.moderation.hiddenLinkCount > 0) ? (
+      <aside className="entry-moderation-notice" role="status">
+        <strong>部分内容已被管理人员隐藏</strong>
+        <p>
+          {[
+            entry.moderation.titleHidden && '标题',
+            entry.moderation.bodyHidden && '正文',
+            entry.moderation.hiddenImageCount > 0 && `${entry.moderation.hiddenImageCount} 张图片`,
+            entry.moderation.hiddenFileCount > 0 && `${entry.moderation.hiddenFileCount} 个文件`,
+            entry.moderation.hiddenLinkCount > 0 && `${entry.moderation.hiddenLinkCount} 个链接`,
+          ]
+            .filter(Boolean)
+            .join('、')}
+          不可公开查看。
+        </p>
+      </aside>
+    ) : null;
   let content: ReactNode;
   if (!entry) {
     content = (
@@ -217,6 +240,22 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
               重试
             </button>
           </>
+        )}
+      </section>
+    );
+  } else if (entry.moderation?.hidden) {
+    content = (
+      <section className="detail-status">
+        <div className="detail-header">
+          <span>条目管理通知</span>
+          {closeButton}
+        </div>
+        <h1>此条目已隐藏</h1>
+        <p>
+          该条目已被管理人员限制展示，或已无可公开展示的正文与附件。原始内容不会在此显示，评论及互动已暂停。
+        </p>
+        {entry.canEdit && (
+          <Link to={`/entries/${entry.id}/edit`}>查看原文并编辑（不会自动解除限制）</Link>
         )}
       </section>
     );
@@ -252,6 +291,7 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
           {closeButton}
         </div>
         <Metadata entry={entry} />
+        {moderationNotice}
         <Comments key={entry.id} entryId={entry.id}>
           <div className="detail-scroll">
             {entry.images.length > 0 && (
@@ -282,6 +322,7 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
       <article className="detail-layout image-detail">
         <Gallery entry={entry} selected={selected} onSelect={selectImage} />
         <section className="detail-information">
+          {moderationNotice}
           <Comments key={entry.id} entryId={entry.id}>
             <div className="detail-top">
               <div className="detail-header image-header">{closeButton}</div>
@@ -310,6 +351,7 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
         </div>
         <Metadata entry={entry} />
         <AttributeBadges entry={entry} />
+        {moderationNotice}
         <Comments key={entry.id} entryId={entry.id}>
           <div className="detail-scroll">
             {entry.title && <h1>{entry.title}</h1>}

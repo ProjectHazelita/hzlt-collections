@@ -1,5 +1,6 @@
+import { hasPermission, type Permission } from '@hcl/contracts';
 import { FilePlusCorner, Heart, Home, Search, Settings, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Link,
   type Location,
@@ -14,7 +15,10 @@ import {
 } from 'react-router';
 import logo from '../assets/logo.svg';
 import { UserAvatar } from '../components/UserAvatar';
+import { AuditPage } from '../features/admin/AuditPage';
 import { ContentManagement } from '../features/admin/ContentManagement';
+import { PermissionSettings } from '../features/admin/PermissionSettings';
+import { UserManagement } from '../features/admin/UserManagement';
 import { AuthForm } from '../features/auth/AuthForm';
 import { EntryComposer } from '../features/composer/EntryComposer';
 import { EntryDetail } from '../features/EntryDetail';
@@ -260,10 +264,23 @@ function RequireUser() {
   return <Outlet />;
 }
 
-function OwnerSettings({ site = false }: { site?: boolean }) {
-  const { user } = useAuth();
-  if (user?.role !== 'owner') return <Navigate replace to="/settings/profile" />;
-  return site ? <SiteSettings /> : <ContentManagement />;
+function StaffSettings({
+  permissions = [],
+  owner = false,
+  children,
+}: {
+  permissions?: Permission[];
+  owner?: boolean;
+  children: ReactNode;
+}) {
+  const { user, epoch } = useAuth();
+  if (
+    owner
+      ? user?.role !== 'owner'
+      : !permissions.some((permission) => hasPermission(user, permission))
+  )
+    return <Navigate replace to="/settings/profile" />;
+  return <Fragment key={`${user?.id}:${epoch.current}`}>{children}</Fragment>;
 }
 
 export function App() {
@@ -284,8 +301,46 @@ export function App() {
             <Route path="settings" element={<SettingsLayout />}>
               <Route index element={<Navigate replace to="profile" />} />
               <Route path="profile" element={<SettingsProfile />} />
-              <Route path="site" element={<OwnerSettings site />} />
-              <Route path="content" element={<OwnerSettings />} />
+              <Route
+                path="site"
+                element={
+                  <StaffSettings permissions={['site.brand', 'site.registration']}>
+                    <SiteSettings />
+                  </StaffSettings>
+                }
+              />
+              <Route
+                path="content"
+                element={
+                  <StaffSettings permissions={['content.moderate', 'content.delete']}>
+                    <ContentManagement />
+                  </StaffSettings>
+                }
+              />
+              <Route
+                path="users"
+                element={
+                  <StaffSettings permissions={['users.manage', 'users.ban', 'users.profile']}>
+                    <UserManagement />
+                  </StaffSettings>
+                }
+              />
+              <Route
+                path="permissions"
+                element={
+                  <StaffSettings owner>
+                    <PermissionSettings />
+                  </StaffSettings>
+                }
+              />
+              <Route
+                path="audit"
+                element={
+                  <StaffSettings permissions={['audit.read']}>
+                    <AuditPage />
+                  </StaffSettings>
+                }
+              />
             </Route>
           </Route>
           <Route
