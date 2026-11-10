@@ -6,6 +6,7 @@ import { assets, entryAttachments, siteSettings, users } from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import type { Transaction } from '../idempotency.js';
 import type { Database } from '../index.js';
+import { freshUser, requirePermission, writeAudit } from '../staff.js';
 import { webUrl } from '../urls.js';
 
 export class SiteService {
@@ -53,8 +54,6 @@ export class SiteService {
   }
 
   async update(input: SitePatch, user: User): Promise<Site> {
-    if (user.role !== 'owner')
-      throw new DomainError(403, 'FORBIDDEN', '只有站点所有者可以修改站点设置。');
     if (!Value.Check(SitePatchSchema, input))
       throw new DomainError(400, 'VALIDATION_ERROR', '站点设置无效。');
     const title = input.title?.trim();
@@ -64,6 +63,10 @@ export class SiteService {
       throw new DomainError(400, 'VALIDATION_ERROR', '不能同时选择上传 Logo 和外部地址。');
     const externalUrl = input.logoUrl == null ? input.logoUrl : webUrl(input.logoUrl);
     await this.db.transaction(async (tx) => {
+      const actor = await freshUser(tx, user.id);
+      if (input.registrationOpen !== undefined) requirePermission(actor, 'site.registration');
+      if (Object.keys(input).some((key) => key !== 'registrationOpen'))
+        requirePermission(actor, 'site.brand');
       // Share the registration lock so closure and concurrent registration have a defined order.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('hcl:first-owner'))`);
       const [existing] = await tx
@@ -116,6 +119,13 @@ export class SiteService {
         .where(eq(siteSettings.id, 1));
       if (existing.logoAssetId && existing.logoAssetId !== logoAssetId)
         await this.retireLogo(tx, existing.logoAssetId);
+      await writeAudit(tx, {
+        actorId: user.id,
+        action: 'site.update',
+        targetType: 'site',
+        targetId: '1',
+        reason: '站点设置更新',
+      });
     });
     return this.get();
   }

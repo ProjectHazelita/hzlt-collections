@@ -51,7 +51,7 @@ interface AuthContextValue {
   request: <T>(path: string, options?: ApiOptions) => Promise<T>;
   authenticate: (kind: 'login' | 'register', input: AuthInput) => Promise<void>;
   logout: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
   applySession: (session: Session) => void;
 }
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const refreshing = useRef<Promise<void> | null>(null);
+  const refreshSession = useRef<() => Promise<void>>(async () => {});
   const changeIdentity = useCallback((next: Session | null) => {
     epoch.current++;
     sessionRef.current = next;
@@ -95,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error?: { code?: string; message?: string; fields?: Record<string, string> };
         };
         if (response.status === 401) changeIdentity(null);
+        else if (response.status === 403) void refreshSession.current();
         throw new ApiError(
           response.status,
           payload.error?.code ?? 'REQUEST_FAILED',
@@ -106,31 +108,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [changeIdentity],
   );
-  const refresh = useCallback((): Promise<void> => {
-    if (refreshing.current) return refreshing.current;
-    const captured = epoch.current;
-    setLoading(true);
-    setError(null);
-    refreshing.current = (async () => {
-      try {
-        const next = await request<Session>('/api/v1/auth/session');
-        if (captured !== epoch.current) return;
-        if (sessionRef.current?.user?.id !== next.user?.id) changeIdentity(next);
-        else {
-          sessionRef.current = next;
-          setSession(next);
+  const refresh = useCallback(
+    (options?: { silent?: boolean }): Promise<void> => {
+      if (refreshing.current) return refreshing.current;
+      const captured = epoch.current;
+      if (!options?.silent) setLoading(true);
+      setError(null);
+      refreshing.current = (async () => {
+        try {
+          const next = await request<Session>('/api/v1/auth/session');
+          if (captured !== epoch.current) return;
+          const previous = sessionRef.current?.user;
+          const nextUser = next.user;
+          if (
+            previous?.id !== nextUser?.id ||
+            previous?.role !== nextUser?.role ||
+            previous?.isAdmin !== nextUser?.isAdmin ||
+            previous?.isModerator !== nextUser?.isModerator ||
+            JSON.stringify(previous?.permissions) !== JSON.stringify(nextUser?.permissions)
+          )
+            changeIdentity(next);
+          else {
+            sessionRef.current = next;
+            setSession(next);
+          }
+        } catch (cause) {
+          if (!options?.silent && captured === epoch.current && !isCancelled(cause))
+            setError(cause);
+        } finally {
+          refreshing.current = null;
+          setLoading(false);
         }
-      } catch (cause) {
-        if (captured === epoch.current && !isCancelled(cause)) setError(cause);
-      } finally {
-        refreshing.current = null;
-        setLoading(false);
-      }
-    })();
-    return refreshing.current;
-  }, [request, changeIdentity]);
+      })();
+      return refreshing.current;
+    },
+    [request, changeIdentity],
+  );
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+  useEffect(() => {
+    refreshSession.current = () => refresh({ silent: true });
+    const update = () => {
+      if (document.visibilityState === 'visible') void refresh({ silent: true });
+    };
+    window.addEventListener('focus', update);
+    document.addEventListener('visibilitychange', update);
+    const timer = window.setInterval(update, 60_000);
+    return () => {
+      window.removeEventListener('focus', update);
+      document.removeEventListener('visibilitychange', update);
+      window.clearInterval(timer);
+    };
   }, [refresh]);
   const authenticate = useCallback(
     async (kind: 'login' | 'register', input: AuthInput) => {

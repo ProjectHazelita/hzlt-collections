@@ -43,6 +43,7 @@ export class ProfileService {
         showSocialLinks: users.showSocialLinks,
         showFollowing: users.showFollowing,
         showFollowers: users.showFollowers,
+        hiddenFields: users.hiddenProfileFields,
       })
       .from(users)
       .where(eq(users.id, id));

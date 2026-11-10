@@ -1,4 +1,5 @@
 import type { Site, UploadAccepted, UploadStatus } from '@hcl/contracts';
+import { hasPermission } from '@hcl/contracts';
 import { ImagePlus, X } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, errorMessage, isCancelled, useAuth } from '../../app/api';
@@ -23,7 +24,9 @@ const logoErrors: Record<string, string> = {
 };
 
 function SiteSettingsEditor() {
-  const { request, epoch } = useAuth();
+  const { request, epoch, user } = useAuth();
+  const canBrand = hasPermission(user, 'site.brand');
+  const canRegistration = hasPermission(user, 'site.registration');
   const { site, loading, error: loadError, refresh } = useSite();
   const [draft, setDraft] = useState(site);
   const [busy, setBusy] = useState(false);
@@ -158,11 +161,15 @@ function SiteSettingsEditor() {
         method: 'PATCH',
         signal: current.signal,
         json: {
-          title: draft.title.trim(),
-          description: draft.description.trim(),
-          registrationOpen: draft.registrationOpen,
-          logoAssetId: draft.logoAssetId,
-          ...(draft.logoAssetId ? {} : { logoUrl: draft.logoUrl?.trim() || null }),
+          ...(canBrand
+            ? {
+                title: draft.title.trim(),
+                description: draft.description.trim(),
+                logoAssetId: draft.logoAssetId,
+                ...(draft.logoAssetId ? {} : { logoUrl: draft.logoUrl?.trim() || null }),
+              }
+            : {}),
+          ...(canRegistration ? { registrationOpen: draft.registrationOpen } : {}),
         },
       });
       if (!active()) return;
@@ -200,131 +207,137 @@ function SiteSettingsEditor() {
       onSubmit={(event) => void submit(event)}
       onChange={() => setSaved(false)}
     >
-      <section className="settings-card" aria-labelledby="site-brand-title">
-        <header className="settings-section-heading">
-          <h2 id="site-brand-title">站点资料</h2>
-          <p>用于页面标题、导航和登录／注册页面，保存后全站同步。</p>
-        </header>
-        <label className="settings-field">
-          <span className="settings-label">站点标题</span>
-          <input
-            required
-            maxLength={100}
-            disabled={busy}
-            value={draft.title}
-            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-          />
-        </label>
-        <label className="settings-field">
-          <span className="settings-label">站点介绍</span>
-          <textarea
-            rows={4}
-            disabled={busy}
-            maxLength={500}
-            value={draft.description}
-            onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-          />
-        </label>
-        <div className="site-logo-preview">
-          <img
-            src={preview || draft.logoUrl || defaultLogo}
-            alt="站点 Logo 预览"
-            referrerPolicy="no-referrer"
-          />
-          <div className="settings-avatar-actions">
-            <span className="settings-avatar-title">站点 Logo</span>
-            <span className="settings-hint">上传静态 JPEG、PNG、WebP 或 GIF，保存后公开显示。</span>
-            <div className="settings-button-row">
-              <button
-                className="secondary settings-small-button"
-                type="button"
-                disabled={busy}
-                onClick={() => input.current?.click()}
-              >
-                <ImagePlus size={16} />
-                {preview || draft.logoUrl || draft.logoAssetId ? '更换 Logo' : '上传 Logo'}
-              </button>
-              {(preview || draft.logoUrl || draft.logoAssetId || uploadPhase) && (
+      {canBrand && (
+        <section className="settings-card" aria-labelledby="site-brand-title">
+          <header className="settings-section-heading">
+            <h2 id="site-brand-title">站点资料</h2>
+            <p>用于页面标题、导航和登录／注册页面，保存后全站同步。</p>
+          </header>
+          <label className="settings-field">
+            <span className="settings-label">站点标题</span>
+            <input
+              required
+              maxLength={100}
+              disabled={busy}
+              value={draft.title}
+              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+            />
+          </label>
+          <label className="settings-field">
+            <span className="settings-label">站点介绍</span>
+            <textarea
+              rows={4}
+              disabled={busy}
+              maxLength={500}
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+            />
+          </label>
+          <div className="site-logo-preview">
+            <img
+              src={preview || draft.logoUrl || defaultLogo}
+              alt="站点 Logo 预览"
+              referrerPolicy="no-referrer"
+            />
+            <div className="settings-avatar-actions">
+              <span className="settings-avatar-title">站点 Logo</span>
+              <span className="settings-hint">
+                上传静态 JPEG、PNG、WebP 或 GIF，保存后公开显示。
+              </span>
+              <div className="settings-button-row">
                 <button
-                  className="settings-text-button"
+                  className="secondary settings-small-button"
                   type="button"
                   disabled={busy}
-                  onClick={() => changeLogoUrl(null)}
+                  onClick={() => input.current?.click()}
                 >
-                  <X size={14} />
-                  恢复默认 Logo
+                  <ImagePlus size={16} />
+                  {preview || draft.logoUrl || draft.logoAssetId ? '更换 Logo' : '上传 Logo'}
                 </button>
-              )}
-            </div>
-            <input
-              ref={input}
-              className="settings-file-input"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              aria-label="选择站点 Logo"
-              disabled={busy}
-              onChange={(event) => {
-                void chooseLogo(event.target.files?.[0]);
-                event.target.value = '';
-              }}
-            />
-          </div>
-        </div>
-        <div className="site-logo-status" role="status" aria-live="polite">
-          {uploadPhase ? (
-            <>
-              <progress
-                aria-label={uploadPhase === 'uploading' ? '正在上传 Logo' : '正在处理 Logo'}
+                {(preview || draft.logoUrl || draft.logoAssetId || uploadPhase) && (
+                  <button
+                    className="settings-text-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => changeLogoUrl(null)}
+                  >
+                    <X size={14} />
+                    恢复默认 Logo
+                  </button>
+                )}
+              </div>
+              <input
+                ref={input}
+                className="settings-file-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                aria-label="选择站点 Logo"
+                disabled={busy}
+                onChange={(event) => {
+                  void chooseLogo(event.target.files?.[0]);
+                  event.target.value = '';
+                }}
               />
-              <span>
-                {uploadPhase === 'uploading' ? '正在上传 Logo…' : '正在处理 Logo，请稍候…'}
-              </span>
-            </>
-          ) : preview ? (
-            <span>Logo 已准备好，保存后生效。当前预览仅在本地显示。</span>
-          ) : (
-            <span>{draft.logoUrl ? '保存后使用此 Logo。' : '未选择图片时使用默认 Logo。'}</span>
+            </div>
+          </div>
+          <div className="site-logo-status" role="status" aria-live="polite">
+            {uploadPhase ? (
+              <>
+                <progress
+                  aria-label={uploadPhase === 'uploading' ? '正在上传 Logo' : '正在处理 Logo'}
+                />
+                <span>
+                  {uploadPhase === 'uploading' ? '正在上传 Logo…' : '正在处理 Logo，请稍候…'}
+                </span>
+              </>
+            ) : preview ? (
+              <span>Logo 已准备好，保存后生效。当前预览仅在本地显示。</span>
+            ) : (
+              <span>{draft.logoUrl ? '保存后使用此 Logo。' : '未选择图片时使用默认 Logo。'}</span>
+            )}
+          </div>
+          {uploadError && (
+            <p className="error" role="alert">
+              {uploadError}
+            </p>
           )}
-        </div>
-        {uploadError && (
-          <p className="error" role="alert">
-            {uploadError}
-          </p>
-        )}
-        <details className="site-logo-alternate">
-          <summary>其他方式：使用外部图片地址</summary>
-          <label className="settings-field">
-            <span className="settings-label">外部 Logo 地址（可选）</span>
+          <details className="site-logo-alternate">
+            <summary>其他方式：使用外部图片地址</summary>
+            <label className="settings-field">
+              <span className="settings-label">外部 Logo 地址（可选）</span>
+              <input
+                type="url"
+                pattern="https?://.+"
+                maxLength={2048}
+                disabled={busy}
+                placeholder="https://example.com/logo.png"
+                value={draft.logoAssetId || preview ? '' : (draft.logoUrl ?? '')}
+                onChange={(event) => changeLogoUrl(event.target.value || null)}
+              />
+              <span className="settings-hint">
+                填写 HTTP(S) 图片地址将替代上传的 Logo。访客会从此地址加载图片。
+              </span>
+            </label>
+          </details>
+        </section>
+      )}
+      {canRegistration && (
+        <section className="settings-card" aria-labelledby="site-registration-title">
+          <header className="settings-section-heading">
+            <h2 id="site-registration-title">注册开放性</h2>
+            <p>关闭后现有用户仍可登录，访客不能创建新账号。</p>
+          </header>
+          <label className="site-registration-toggle">
             <input
-              type="url"
-              pattern="https?://.+"
-              maxLength={2048}
+              type="checkbox"
               disabled={busy}
-              placeholder="https://example.com/logo.png"
-              value={draft.logoAssetId || preview ? '' : (draft.logoUrl ?? '')}
-              onChange={(event) => changeLogoUrl(event.target.value || null)}
+              checked={draft.registrationOpen}
+              onChange={(event) => setDraft({ ...draft, registrationOpen: event.target.checked })}
             />
-            <span className="settings-hint">
-              填写 HTTP(S) 图片地址将替代上传的 Logo。访客会从此地址加载图片。
-            </span>
+            <span>开放注册</span>
           </label>
-        </details>
-      </section>
-      <section className="settings-card" aria-labelledby="site-registration-title">
-        <header className="settings-section-heading">
-          <h2 id="site-registration-title">注册开放性</h2>
-          <p>关闭后现有用户仍可登录，访客不能创建新账号。</p>
-        </header>
-        <label className="site-registration-toggle">
-          <input
-            type="checkbox"
-            disabled={busy}
-            checked={draft.registrationOpen}
-            onChange={(event) => setDraft({ ...draft, registrationOpen: event.target.checked })}
-          />
-          <span>开放注册</span>
-        </label>
-      </section>
+        </section>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}

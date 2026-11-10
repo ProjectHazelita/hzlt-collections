@@ -5,4 +5,5 @@ export * from './errors.js';
 export * from './primitives.js';
 export * from './profile.js';
 export * from './site.js';
+export * from './staff.js';
 export * from './uploads.js';

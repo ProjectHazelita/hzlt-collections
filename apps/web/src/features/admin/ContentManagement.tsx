@@ -1,210 +1,205 @@
-// biome-ignore-all lint/a11y/noNoninteractiveTabindex: The named table region must be keyboard-focusable for horizontal scrolling.
-import type { Entry, EntryList } from '@hcl/contracts';
-import { type InfiniteData, useInfiniteQuery } from '@tanstack/react-query';
+import { type Entry, type EntryModeration, hasPermission } from '@hcl/contracts';
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { errorMessage, invalidateEntries, queryClient, useAuth } from '../../app/api';
-import { ConfirmDeleteDialog } from '../../components/ConfirmDeleteDialog';
+import { invalidateEntries, queryClient, useAuth } from '../../app/api';
+import { ReasonDialog, RequestError, useStaffList } from './StaffControls';
 import './admin.css';
 
-const dateFormat = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
+type Review = { entry: Entry; moderation: EntryModeration };
+type Target = {
+  target: 'entry' | 'title' | 'body' | 'image' | 'file' | 'link';
+  targetId?: string;
+  hidden: boolean;
+  label: string;
+};
 
-export function ContentManagement() {
+function ReviewEntry({ id, onClose }: { id: string; onClose: () => void }) {
   const auth = useAuth();
-  const identityEpoch = auth.epoch.current;
-  const userId = auth.user?.id;
-  const queryKey = ['entries', 'admin', userId, identityEpoch] as const;
-  const [selected, setSelected] = useState<{ entry: Entry; epoch: number } | null>(null);
-  const query = useInfiniteQuery({
-    queryKey,
-    enabled: auth.user?.role === 'owner' && !auth.loading,
-    initialPageParam: null as string | null,
-    queryFn: async ({ pageParam, signal }) => {
-      const captured = auth.epoch.current;
-      if (captured !== identityEpoch) throw new DOMException('Identity changed', 'AbortError');
-      const params = new URLSearchParams({ limit: '30' });
-      if (pageParam) params.set('cursor', pageParam);
-      const result = await auth.request<EntryList>(`/api/v1/admin/entries?${params}`, { signal });
-      if (captured !== auth.epoch.current || signal.aborted)
-        throw new DOMException('Identity changed', 'AbortError');
-      return result;
-    },
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  const [action, setAction] = useState<Target | 'delete' | null>(null);
+  const query = useQuery({
+    queryKey: ['staff', 'review', id, auth.user?.id, auth.epoch.current],
+    queryFn: ({ signal }) => auth.request<Review>(`/api/v1/admin/entries/${id}`, { signal }),
   });
-  const authorized = auth.user?.role === 'owner' && !auth.loading;
-  const pages = authorized ? query.data?.pages : undefined;
-  const entries = pages?.flatMap((page) => page.items) ?? [];
-  const total = pages?.[0]?.total;
-
-  function deleted(entry: Entry) {
-    if (!authorized || identityEpoch !== auth.epoch.current || selected?.epoch !== identityEpoch)
-      return;
-    setSelected(null);
-    // Remove the confirmed deletion immediately while all other entry lists revalidate.
-    queryClient.setQueryData<InfiniteData<EntryList, string | null>>(queryKey, (previous) => {
-      if (!previous || identityEpoch !== auth.epoch.current) return previous;
-      return {
-        ...previous,
-        pages: previous.pages.map((page) => ({
-          ...page,
-          items: page.items.filter((item) => item.id !== entry.id),
-          total: Math.max(0, page.total - 1),
-        })),
-      };
-    });
-    if (identityEpoch === auth.epoch.current) void invalidateEntries();
+  const review = query.data;
+  const canModerate = hasPermission(auth.user, 'content.moderate');
+  function control(target: Target) {
+    return canModerate ? (
+      <button type="button" className="secondary" onClick={() => setAction(target)}>
+        {target.hidden ? '隐藏' : '恢复'}
+        {target.label}
+      </button>
+    ) : null;
   }
-
   return (
-    <section className="content-management" aria-labelledby="management-title">
-      <header className="management-heading">
-        <h1 id="management-title">站点管理</h1>
-        <p>owner · 管理全站内容；编辑正文和标签仍由作者完成。</p>
-      </header>
-      <div className="management-toolbar" aria-live="polite">
-        <h2>
-          全部条目 <span>{total === undefined ? '—' : total.toLocaleString()}</span>
-        </h2>
-        <span className="management-registration">
-          <span className="management-status-dot" aria-hidden="true" />
-          公开注册已开放
-        </span>
-      </div>
-      {authorized && query.isPending && (
-        <p role="status" className="muted">
-          正在加载全站内容…
-        </p>
-      )}
-      {authorized && query.isError && (
-        <div className="management-status" role="alert">
-          <p className="error">{errorMessage(query.error)}</p>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() =>
-              void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())
-            }
-            disabled={query.isFetching}
-          >
-            重试
-          </button>
-        </div>
-      )}
-      {pages && entries.length === 0 && (
-        <div className="management-status">
-          <h2>还没有条目</h2>
-          <p className="muted">已发布的内容会显示在这里。</p>
-        </div>
-      )}
-      {entries.length > 0 && (
-        <section
-          className="management-table-scroll"
-          aria-label="全站内容表格，可横向滚动"
-          tabIndex={0}
-        >
-          <table className="management-table">
-            <caption className="management-sr-only">
-              全站已发布条目、作者、发布时间与管理操作
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">条目</th>
-                <th scope="col">作者</th>
-                <th scope="col">发布时间</th>
-                <th scope="col">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id}>
-                  <td>
-                    <div className="management-entry">
-                      <Link className="management-entry-title" to={`/entries/${entry.id}`}>
-                        {entry.title ||
-                          entry.body ||
-                          entry.files[0]?.name ||
-                          entry.links[0]?.host ||
-                          `条目 #${entry.id}`}
-                      </Link>
-                      <span className="management-entry-meta">
-                        #{entry.id} ·{' '}
-                        {[
-                          entry.images.length ? '图片' : '',
-                          entry.files.length ? '文件' : '',
-                          entry.links.length ? '链接' : '',
-                        ]
-                          .filter(Boolean)
-                          .join('、') || '文字'}{' '}
-                        · 公开
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="management-author" title={`@${entry.author.username}`}>
-                      {entry.author.displayName}
-                    </span>
-                  </td>
-                  <td>
-                    <time
-                      dateTime={entry.createdAt}
-                      title={new Date(entry.createdAt).toLocaleString('zh-CN')}
-                    >
-                      {dateFormat.format(new Date(entry.createdAt))}
-                    </time>
-                  </td>
-                  <td>
-                    <div className="management-actions">
-                      <Link
-                        className="management-action"
-                        to={`/entries/${entry.id}`}
-                        aria-label={`查看条目 #${entry.id}`}
-                      >
-                        查看
-                      </Link>
-                      {entry.canDelete && (
-                        <button
-                          type="button"
-                          className="management-action management-delete"
-                          aria-label={`删除条目 #${entry.id}`}
-                          onClick={() => {
-                            if (identityEpoch === auth.epoch.current)
-                              setSelected({ entry, epoch: identityEpoch });
-                          }}
-                        >
-                          删除
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-      {authorized && query.hasNextPage && (
-        <button
-          type="button"
-          className="secondary management-more"
-          onClick={() => void query.fetchNextPage()}
-          disabled={query.isFetching}
-        >
-          {query.isFetchingNextPage ? '正在加载…' : '加载更多'}
+    <section className="settings-card staff-review">
+      <div className="staff-row">
+        <h2>条目审核 · {id}</h2>
+        <button type="button" className="secondary" onClick={onClose}>
+          关闭审核
         </button>
+      </div>
+      <RequestError error={query.error} retry={() => void query.refetch()} />
+      {query.isPending && <p role="status">正在读取原始条目…</p>}
+      {review && (
+        <>
+          <p>以下内容为授权查看的原始内容；编辑原文不会解除限制。</p>
+          <p>整条状态：{review.moderation.hidden ? '已隐藏（包括无可展示内容）' : '可展示'}</p>
+          {review.moderation.reason && <p>最近原因：{review.moderation.reason}</p>}
+          <div className="staff-actions">
+            {control({ target: 'entry', hidden: !review.moderation.hidden, label: '整个条目' })}
+            {hasPermission(auth.user, 'content.delete') && (
+              <button type="button" className="secondary" onClick={() => setAction('delete')}>
+                永久删除条目
+              </button>
+            )}
+            <Link to={`/entries/${id}`}>查看公开详情</Link>
+          </div>
+          <section className="staff-piece">
+            <h3>标题 · {review.moderation.titleHidden ? '已隐藏' : '正常'}</h3>
+            <p>{review.entry.title || '无标题'}</p>
+            {control({ target: 'title', hidden: !review.moderation.titleHidden, label: '标题' })}
+          </section>
+          <section className="staff-piece">
+            <h3>正文 · {review.moderation.bodyHidden ? '已隐藏' : '正常'}</h3>
+            <div className="staff-original-text">{review.entry.body || '无正文'}</div>
+            {control({ target: 'body', hidden: !review.moderation.bodyHidden, label: '整段正文' })}
+          </section>
+          {review.entry.images.map((image) => {
+            const hidden = review.moderation.hiddenImageIds.includes(image.id);
+            return (
+              <section className="staff-piece" key={image.id}>
+                <h3>图片 · {hidden ? '已隐藏' : '正常'}</h3>
+                <img className="staff-review-image" src={image.thumbnailUrl} alt={image.name} />
+                <p>{image.name}</p>
+                {control({ target: 'image', targetId: image.id, hidden: !hidden, label: '此图片' })}
+              </section>
+            );
+          })}
+          {review.entry.files.map((file) => {
+            const hidden = review.moderation.hiddenFileIds.includes(file.id);
+            return (
+              <section className="staff-piece" key={file.id}>
+                <h3>文件 · {hidden ? '已隐藏' : '正常'}</h3>
+                <a href={file.downloadUrl}>{file.name}</a>
+                {control({ target: 'file', targetId: file.id, hidden: !hidden, label: '此文件' })}
+              </section>
+            );
+          })}
+          {review.entry.links.map((link) => {
+            const hidden = review.moderation.hiddenLinkUrls.includes(link.url);
+            return (
+              <section className="staff-piece" key={link.url}>
+                <h3>链接 · {hidden ? '已隐藏' : '正常'}</h3>
+                <p>
+                  <a href={link.url} target="_blank" rel="noreferrer">
+                    {link.url}
+                  </a>
+                </p>
+                {control({ target: 'link', targetId: link.url, hidden: !hidden, label: '此链接' })}
+              </section>
+            );
+          })}
+        </>
       )}
-      <ConfirmDeleteDialog
-        entry={authorized && selected?.epoch === identityEpoch ? selected.entry : null}
-        onClose={() => {
-          if (identityEpoch === auth.epoch.current) setSelected(null);
-        }}
-        onDeleted={deleted}
-      />
+      {action && (
+        <ReasonDialog
+          title={
+            action === 'delete'
+              ? '永久删除条目'
+              : `${action.hidden ? '隐藏' : '恢复'}${action.label}`
+          }
+          destructive={action === 'delete'}
+          onClose={() => setAction(null)}
+          onSubmit={async (reason) => {
+            if (action === 'delete')
+              await auth.request(`/api/v1/admin/entries/${id}`, {
+                method: 'DELETE',
+                json: { reason },
+              });
+            else
+              await auth.request(`/api/v1/admin/entries/${id}/moderation`, {
+                method: 'PATCH',
+                json: {
+                  target: action.target,
+                  ...(action.targetId ? { targetId: action.targetId } : {}),
+                  hidden: action.hidden,
+                  reason,
+                },
+              });
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['staff'] }),
+              invalidateEntries(),
+            ]);
+            if (action === 'delete') onClose();
+          }}
+        />
+      )}
     </section>
   );
 }
 
-export default ContentManagement;
+export function ContentManagement() {
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = useStaffList<Entry>('entries', '/api/v1/admin/entries');
+  return (
+    <section className="content-management">
+      <header className="management-heading">
+        <h1>内容管理</h1>
+        <p>包括已隐藏的条目。受限内容仅对拥有受限内容审核权限的人员开放；审核不修改作者原文。</p>
+      </header>
+      <RequestError error={list.error} retry={() => void list.refetch()} />
+      {list.isPending && <p role="status">正在加载条目…</p>}
+      {selected && <ReviewEntry key={selected} id={selected} onClose={() => setSelected(null)} />}
+      <div className="management-table-scroll">
+        <table className="management-table">
+          <thead>
+            <tr>
+              <th>条目</th>
+              <th>作者</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.data?.pages
+              .flatMap((page) => page.items)
+              .map((entry) => (
+                <tr key={entry.id}>
+                  <td>
+                    <Link to={`/entries/${entry.id}`}>{entry.title || '无标题条目'}</Link>
+                    <br />
+                    <small>{entry.id}</small>
+                  </td>
+                  <td>{entry.author.displayName}</td>
+                  <td>
+                    {entry.moderation?.hidden ? '已隐藏' : '可展示'} · {entry.visibility}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setSelected(entry.id)}
+                    >
+                      审核原始内容
+                    </button>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      {list.data && !list.data.pages.some((page) => page.items.length) && <p>暂无可管理条目。</p>}
+      {list.hasNextPage && (
+        <button
+          className="secondary"
+          type="button"
+          disabled={list.isFetchingNextPage}
+          onClick={() => void list.fetchNextPage()}
+        >
+          加载更多条目
+        </button>
+      )}
+    </section>
+  );
+}

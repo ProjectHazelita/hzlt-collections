@@ -1,16 +1,19 @@
 import type { User, UserProfile } from '@hcl/contracts';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { normalizeUsername } from '../auth/service.js';
 import { follows, users } from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import type { Database } from '../index.js';
-import { publicUserColumns, toPublicUser } from '../users.js';
+import { effectivePermissionsColumn, publicUserColumns, toPublicUser } from '../users.js';
 
 export class UserService {
   constructor(private readonly db: Database) {}
   async find(username: string) {
     const { usernameKey } = normalizeUsername(username);
-    const [row] = await this.db.select().from(users).where(eq(users.usernameKey, usernameKey));
+    const [row] = await this.db
+      .select({ ...getTableColumns(users), permissions: effectivePermissionsColumn })
+      .from(users)
+      .where(eq(users.usernameKey, usernameKey));
     if (!row) throw new DomainError(404, 'NOT_FOUND', '用户不存在。');
     return row;
   }
@@ -33,10 +36,17 @@ export class UserService {
     const self = row.id === viewer?.id;
     return {
       user: toPublicUser(row),
-      pronouns: row.pronouns,
-      email: self || row.showEmail ? row.email : null,
-      location: self || row.showLocation ? row.location : null,
-      socialLinks: self || row.showSocialLinks ? row.socialLinks : [],
+      pronouns: row.hiddenProfileFields.includes('pronouns') ? 'not specified' : row.pronouns,
+      email:
+        !row.hiddenProfileFields.includes('email') && (self || row.showEmail) ? row.email : null,
+      location:
+        !row.hiddenProfileFields.includes('location') && (self || row.showLocation)
+          ? row.location
+          : null,
+      socialLinks:
+        !row.hiddenProfileFields.includes('socialLinks') && (self || row.showSocialLinks)
+          ? row.socialLinks
+          : [],
       showFollowing: row.showFollowing,
       showFollowers: row.showFollowers,
       ...(await this.counts(row.id, viewer)),

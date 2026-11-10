@@ -1,4 +1,5 @@
 import { type Static, Type } from 'typebox';
+import { PermissionSchema } from './permissions.js';
 
 /** IDs remain strings across the HTTP boundary, including values beyond JS safe integers. */
 export const ENTRY_ID_MAX = '9223372036854775807';
@@ -23,6 +24,9 @@ export const UserSchema = Type.Object(
     displayName: Type.String({ maxLength: 32 }),
     bio: Type.String({ maxLength: 160 }),
     role: UserRoleSchema,
+    isAdmin: Type.Boolean(),
+    isModerator: Type.Boolean(),
+    permissions: Type.Array(PermissionSchema),
     avatarUrl: Type.Union([Type.Null(), Type.String({ pattern: '^/media/[^/]+/avatar$' })]),
   },
   { additionalProperties: false },

@@ -141,19 +141,24 @@ export class AuthService {
   async login(input: AuthInput): Promise<User> {
     const { usernameKey, password } = normalizeInput(input);
     const [user] = await this.db
-      .select({ ...publicUser, passwordHash: users.passwordHash })
+      .select({ ...publicUser, passwordHash: users.passwordHash, banned: users.banned })
       .from(users)
       .where(eq(users.usernameKey, usernameKey))
       .limit(1);
     const hash = user ? user.passwordHash : DUMMY_PHC;
     const matches = await passwordTask(() => argon2.verify(hash, password));
-    if (!user || !matches) throw new DomainError(401, 'INVALID_CREDENTIALS', '用户名或密码错误。');
+    if (!user || !matches || user.banned)
+      throw new DomainError(401, 'INVALID_CREDENTIALS', '用户名或密码错误。');
     return toPublicUser(user);
   }
 
   async getUser(id: string): Promise<User | null> {
-    const [user] = await this.db.select(publicUser).from(users).where(eq(users.id, id)).limit(1);
-    return user ? toPublicUser(user) : null;
+    const [user] = await this.db
+      .select({ ...publicUser, banned: users.banned })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+    return user && !user.banned ? toPublicUser(user) : null;
   }
 
   async changePassword(id: string, input: PasswordChangeInput): Promise<User> {

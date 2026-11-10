@@ -1,5 +1,6 @@
 import type {
   Profile as EditableProfile,
+  ProfileField,
   Pronouns,
   Session,
   UploadAccepted,
@@ -37,7 +38,10 @@ export function SettingsProfile() {
 
 function ProfileEditor({ onRetry }: { onRetry: () => void }) {
   const { user, request, epoch, applySession } = useAuth();
-  const [details, setDetails] = useState<Omit<EditableProfile, 'displayName' | 'avatarAssetId'>>({
+  const [hiddenFields, setHiddenFields] = useState<ProfileField[]>([]);
+  const [details, setDetails] = useState<
+    Omit<EditableProfile, 'displayName' | 'avatarAssetId' | 'hiddenFields'>
+  >({
     bio: '',
     email: '',
     pronouns: 'not specified',
@@ -83,7 +87,14 @@ function ProfileEditor({ onRetry }: { onRetry: () => void }) {
     void request<EditableProfile>('/api/v1/me/profile', { signal: abort.signal })
       .then((profile) => {
         if (abort.signal.aborted) return;
-        const { displayName: name, avatarAssetId: avatar, ...rest } = profile;
+        const {
+          displayName: name,
+          avatarAssetId: avatar,
+          hiddenFields: restrictions,
+          ...rest
+        } = profile;
+        setHiddenFields(restrictions);
+        setPreview(avatar ? `/media/${avatar}/avatar` : '');
         setDisplayName(name);
         setAvatarAssetId(avatar);
         socialLinkKeys.current = rest.socialLinks.map(() => uuid());
@@ -209,9 +220,9 @@ function ProfileEditor({ onRetry }: { onRetry: () => void }) {
       if (!mounted.current) return;
       setBaseline(JSON.stringify(details));
       applySession(next);
-      setDisplayName(next.user?.displayName ?? name);
-      setAvatarAssetId(avatarId(next.user?.avatarUrl ?? null));
-      showPreview(next.user?.avatarUrl ?? '');
+      // Session projections are sanitized; retain the editable originals after saving.
+      setDisplayName(name);
+      showPreview(avatarAssetId ? `/media/${avatarAssetId}/avatar` : '');
       setProfileSuccess('个人资料已更新。');
     } catch (cause) {
       if (mounted.current && !isCancelled(cause)) {
@@ -302,6 +313,28 @@ function ProfileEditor({ onRetry }: { onRetry: () => void }) {
           <h2>个人资料</h2>
           <p>昵称、头像、个性签名和代词公开显示，其他信息由你选择是否公开。</p>
         </header>
+        {hiddenFields.length > 0 && (
+          <aside className="entry-moderation-notice" role="status">
+            <strong>部分资料已被隐藏</strong>
+            <p>
+              {hiddenFields
+                .map(
+                  (field) =>
+                    ({
+                      displayName: '昵称',
+                      avatar: '头像',
+                      bio: '个性签名',
+                      pronouns: '代词',
+                      email: '邮箱',
+                      location: '所在地',
+                      socialLinks: '社交链接',
+                    })[field],
+                )
+                .join('、')}
+              受到管理限制。这里保留你的原始资料；修改及保存不会解除隐藏。
+            </p>
+          </aside>
+        )}
         <div className="settings-avatar-row">
           <div className="settings-avatar">
             {preview ? (

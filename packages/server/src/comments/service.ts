@@ -10,7 +10,7 @@ import {
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { Value } from 'typebox/value';
 import { comments, entries, users } from '../db/schema.js';
-import { visibleEntries } from '../entries/access.js';
+import { publicEntries } from '../entries/access.js';
 import { entryId } from '../entries/service.js';
 import { DomainError } from '../errors.js';
 import type { Database } from '../index.js';
@@ -48,7 +48,7 @@ export class CommentService {
     const [entry] = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(and(eq(entries.id, id), visibleEntries(user)))
+      .where(and(eq(entries.id, id), publicEntries(user)))
       .limit(1);
     if (!entry) return notFound();
     return entry;
@@ -72,7 +72,7 @@ export class CommentService {
         .where(
           and(
             eq(comments.entryId, parsedId),
-            sql`exists (select 1 from ${entries} where ${entries.id} = ${comments.entryId} and ${visibleEntries(user)})`,
+            sql`exists (select 1 from ${entries} where ${entries.id} = ${comments.entryId} and ${publicEntries(user)})`,
           ),
         )
         .orderBy(asc(comments.createdAt), asc(comments.id))
@@ -114,7 +114,12 @@ export class CommentService {
     if (Array.from(body).length > MAX_COMMENT_LENGTH) return invalid('评论最多 1000 个字符。');
     if (/\p{Cc}/u.test(body.replaceAll('\n', ''))) return invalid('评论包含无效字符。');
     return this.db.transaction(async (tx) => {
-      await this.visibleEntry(tx, parsedId, user);
+      const [visible] = await tx
+        .select({ id: entries.id })
+        .from(entries)
+        .where(and(eq(entries.id, parsedId), publicEntries(user)))
+        .for('update');
+      if (!visible) return notFound();
       let parent: CommentRow | undefined;
       if (input.parentId) {
         const [row] = await tx

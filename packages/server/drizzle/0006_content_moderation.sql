@@ -1,0 +1,1 @@
+ALTER TABLE "entries" ADD COLUMN "moderation" jsonb NOT NULL DEFAULT '{"hidden":false,"titleHidden":false,"bodyHidden":false,"hiddenImageIds":[],"hiddenFileIds":[],"hiddenLinkUrls":[],"reason":null}'::jsonb;

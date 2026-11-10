@@ -17,7 +17,7 @@ import {
   TagsResponseSchema,
   UnsafeRequestHeadersSchema,
 } from '@hcl/contracts';
-import { type Database, DomainError, EntryService } from '@hcl/server';
+import { type Database, EntryService } from '@hcl/server';
 import type { FastifyInstance } from 'fastify';
 import type { PgBoss } from 'pg-boss';
 import { Type } from 'typebox';
@@ -152,8 +152,6 @@ export async function installEntries(
       },
       async (request) => {
         const user = request.requireUser();
-        if (user.role !== 'owner')
-          throw new DomainError(403, 'FORBIDDEN', 'Only the site owner can manage all entries.');
         return entries.listAdmin(request.query, user);
       },
     );

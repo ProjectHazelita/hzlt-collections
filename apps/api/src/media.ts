@@ -106,7 +106,7 @@ export async function installMedia(
         },
         async (request, reply) => {
           const asset = await (kind === 'avatar'
-            ? assets.avatar(request.params.assetId)
+            ? assets.avatar(request.params.assetId, request.currentUser)
             : assets.siteLogo(request.params.assetId));
           const stream = storage.read(asset.thumbnailKey);
           try {

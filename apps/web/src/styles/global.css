@@ -1774,3 +1774,17 @@ h2 {
     min-height: 36px;
   }
 }
+
+.entry-moderation-notice {
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.entry-moderation-notice p {
+  margin: 8px 0 0;
+}
