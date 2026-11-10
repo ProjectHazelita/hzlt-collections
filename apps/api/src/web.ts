@@ -16,6 +16,7 @@ const fixedRoutes = [
   '/settings',
   '/settings/profile',
   '/settings/content',
+  '/settings/site',
 ];
 const assetExtensions: Record<string, true> = {
   '.js': true,
@@ -35,6 +36,15 @@ const assetExtensions: Record<string, true> = {
 };
 function pathname(request: FastifyRequest): string | undefined {
   const path = request.raw.url?.split('?', 1)[0];
+  if (path?.startsWith('/users/')) {
+    try {
+      const username = decodeURIComponent(path.slice('/users/'.length)).normalize('NFKC');
+      if (/^[\p{L}\p{N}_-]{3,32}$/u.test(username)) return path;
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
   // Built names and declared routes are canonical ASCII paths. Never normalize a
   // traversal or encoded separator into an otherwise valid application route.
   if (
@@ -137,8 +147,8 @@ export async function installWeb(
         return reply.sendFile(asset, sendOptions);
       });
     }
-    for (const route of [...fixedRoutes, '/entries/:id', '/entries/:id/edit']) {
-      scope.get<{ Params: { id?: string } }>(
+    for (const route of [...fixedRoutes, '/entries/:id', '/entries/:id/edit', '/users/:username']) {
+      scope.get<{ Params: { id?: string; username?: string } }>(
         route,
         { schema: { hide: true } },
         async (request, reply) => {

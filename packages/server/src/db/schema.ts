@@ -24,6 +24,22 @@ export const users = pgTable(
     usernameKey: text('username_key').notNull().unique(),
     displayName: text('display_name').notNull(),
     avatarAssetId: uuid('avatar_asset_id').references((): AnyPgColumn => assets.id),
+    bio: text('bio').notNull().default(''),
+    email: text('email').notNull().default(''),
+    pronouns: text('pronouns')
+      .$type<'they/them' | 'he/him' | 'she/her' | 'not specified'>()
+      .notNull()
+      .default('not specified'),
+    location: text('location').notNull().default(''),
+    socialLinks: jsonb('social_links')
+      .$type<{ label: string; url: string }[]>()
+      .notNull()
+      .default([]),
+    showEmail: boolean('show_email').notNull().default(false),
+    showLocation: boolean('show_location').notNull().default(false),
+    showSocialLinks: boolean('show_social_links').notNull().default(false),
+    showFollowing: boolean('show_following').notNull().default(true),
+    showFollowers: boolean('show_followers').notNull().default(true),
     passwordHash: text('password_hash').notNull(),
     role: text('role').$type<'owner' | 'member'>().notNull(),
     createdAt: time('created_at').notNull().defaultNow(),
@@ -78,19 +94,32 @@ export const assets = pgTable(
     check('asset_kind', sql`${t.kind} in ('image','file')`),
   ],
 );
-export const entries = pgTable('entries', {
-  id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
-  authorId: uuid('author_id')
-    .notNull()
-    .references(() => users.id),
-  title: text('title'),
-  body: text('body').notNull(),
-  nsfw: boolean('nsfw').notNull().default(false),
-  aiGenerated: boolean('ai_generated').notNull().default(false),
-  createdAt: time('created_at').notNull().defaultNow(),
-  updatedAt: time('updated_at').notNull().defaultNow(),
-  deletedAt: time('deleted_at'),
-});
+export const entries = pgTable(
+  'entries',
+  {
+    id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id),
+    title: text('title'),
+    body: text('body').notNull(),
+    visibility: text('visibility')
+      .$type<'public' | 'registered' | 'followers' | 'following' | 'private'>()
+      .notNull()
+      .default('public'),
+    nsfw: boolean('nsfw').notNull().default(false),
+    aiGenerated: boolean('ai_generated').notNull().default(false),
+    createdAt: time('created_at').notNull().defaultNow(),
+    updatedAt: time('updated_at').notNull().defaultNow(),
+    deletedAt: time('deleted_at'),
+  },
+  (t) => [
+    check(
+      'valid_visibility',
+      sql`${t.visibility} in ('public','registered','followers','following','private')`,
+    ),
+  ],
+);
 export const entryAttachments = pgTable(
   'entry_attachments',
   {
@@ -182,4 +211,34 @@ export const idempotencyKeys = pgTable(
     expiresAt: time('expires_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.operation, t.key] })],
+);
+
+export const follows = pgTable(
+  'follows',
+  {
+    followerId: uuid('follower_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    followedId: uuid('followed_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: time('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.followerId, t.followedId] }),
+    index('follows_followed').on(t.followedId),
+    check('follows_not_self', sql`${t.followerId} <> ${t.followedId}`),
+  ],
+);
+export const siteSettings = pgTable(
+  'site_settings',
+  {
+    id: integer('id').primaryKey().default(1),
+    title: text('title').notNull().default('hzlt!Collections'),
+    description: text('description').notNull().default('登录后继续发布和喜欢内容。'),
+    logoUrl: text('logo_url'),
+    logoAssetId: uuid('logo_asset_id').references(() => assets.id),
+    registrationOpen: boolean('registration_open').notNull().default(true),
+  },
+  (t) => [check('site_singleton', sql`${t.id} = 1`)],
 );

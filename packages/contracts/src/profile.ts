@@ -1,8 +1,81 @@
 import { type Static, Type } from 'typebox';
-import { UuidSchema } from './primitives.js';
+import { UserSchema, UuidSchema } from './primitives.js';
 
+export const PronounsSchema = Type.Union([
+  Type.Literal('they/them'),
+  Type.Literal('he/him'),
+  Type.Literal('she/her'),
+  Type.Literal('not specified'),
+]);
+export type Pronouns = Static<typeof PronounsSchema>;
+export const SocialLinksSchema = Type.Array(
+  Type.Object(
+    {
+      label: Type.String({ maxLength: 50 }),
+      url: Type.String({ maxLength: 2048 }),
+    },
+    { additionalProperties: false },
+  ),
+  { maxItems: 5 },
+);
+export type SocialLink = Static<typeof SocialLinksSchema>[number];
+const profileFields = {
+  bio: Type.String({ maxLength: 160 }),
+  email: Type.String({ maxLength: 254 }),
+  pronouns: PronounsSchema,
+  location: Type.String({ maxLength: 100 }),
+  socialLinks: SocialLinksSchema,
+  showEmail: Type.Boolean(),
+  showLocation: Type.Boolean(),
+  showSocialLinks: Type.Boolean(),
+  showFollowing: Type.Boolean(),
+  showFollowers: Type.Boolean(),
+};
+export const ProfileSchema = Type.Object(
+  {
+    displayName: Type.String({ maxLength: 32 }),
+    avatarAssetId: Type.Union([UuidSchema, Type.Null()]),
+    ...profileFields,
+  },
+  { additionalProperties: false },
+);
+export type Profile = Static<typeof ProfileSchema>;
+export const UserProfileSchema = Type.Object(
+  {
+    user: UserSchema,
+    pronouns: PronounsSchema,
+    email: Type.Union([Type.String(), Type.Null()]),
+    location: Type.Union([Type.String(), Type.Null()]),
+    socialLinks: SocialLinksSchema,
+    followingCount: Type.Integer({ minimum: 0 }),
+    followerCount: Type.Integer({ minimum: 0 }),
+    followingByMe: Type.Boolean(),
+    showFollowing: Type.Boolean(),
+    showFollowers: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+export type UserProfile = Static<typeof UserProfileSchema>;
+export const UserListSchema = Type.Object(
+  { items: Type.Array(UserSchema) },
+  { additionalProperties: false },
+);
+export const FollowResponseSchema = Type.Object(
+  {
+    followingByMe: Type.Boolean(),
+    followingCount: Type.Integer({ minimum: 0 }),
+    followerCount: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type FollowResponse = Static<typeof FollowResponseSchema>;
+export const UsernameParamsSchema = Type.Object(
+  { username: Type.String({ maxLength: 128 }) },
+  { additionalProperties: false },
+);
 export const ProfileInputSchema = Type.Object(
   {
+    ...Type.Partial(Type.Object(profileFields)).properties,
     displayName: Type.Optional(
       Type.String({
         maxLength: 64,

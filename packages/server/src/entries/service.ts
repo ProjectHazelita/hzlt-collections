@@ -20,7 +20,7 @@ import {
   type TagsQuery,
   type User,
 } from '@hcl/contracts';
-import { and, count, desc, eq, inArray, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, lt, or, type SQL, sql } from 'drizzle-orm';
 import { fromDrizzle, type PgBoss } from 'pg-boss';
 import { Value } from 'typebox/value';
 import {
@@ -30,6 +30,7 @@ import {
   entryAttachments,
   entryTags,
   likes,
+  siteSettings,
   tags,
   users,
 } from '../db/schema.js';
@@ -37,6 +38,7 @@ import { DomainError } from '../errors.js';
 import { hashInput, type Transaction, withIdempotency } from '../idempotency.js';
 import type { Database } from '../index.js';
 import { publicUserColumns, toPublicUser } from '../users.js';
+import { visibleEntries } from './access.js';
 
 type Reader = Pick<Database, 'select'>;
 type NormalizedTag = { name: string; normalizedName: string };
@@ -45,6 +47,7 @@ type NormalizedAttachment =
   | { kind: 'link'; url: string };
 type NormalizedInput = {
   title: string | null;
+  visibility: Entry['visibility'];
   body: string;
   images: string[];
   files: string[];
@@ -137,6 +140,7 @@ function normalize(input: EntryInput): NormalizedInput {
   );
   return {
     title,
+    visibility: input.visibility ?? 'public',
     body: input.body,
     images,
     files,
@@ -199,8 +203,8 @@ function decode(value: string | undefined, kind: Cursor['kind']): Cursor | undef
   entryId(parsed.id);
   return parsed;
 }
-function publicFilter(q: string): SQL {
-  const visible = isNull(entries.deletedAt);
+function publicFilter(q: string, user: User | null): SQL {
+  const visible = visibleEntries(user);
   if (!q) return visible;
   const needle = pattern(q);
   return and(
@@ -229,7 +233,7 @@ export class EntryService {
       })
       .from(entries)
       .innerJoin(users, eq(users.id, entries.authorId))
-      .where(and(inArray(entries.id, ids), isNull(entries.deletedAt)));
+      .where(and(inArray(entries.id, ids), visibleEntries(user)));
     const attachmentRows = await db
       .select({ attachment: entryAttachments, asset: assets })
       .from(entryAttachments)
@@ -321,6 +325,7 @@ export class EntryService {
       const bundle = attachmentsMap.get(entry.id) ?? { images: [], files: [], links: [] };
       result.set(entry.id, {
         id: entry.id.toString(),
+        visibility: entry.visibility,
         author: toPublicUser(author),
         title: entry.title,
         body: entry.body,
@@ -346,8 +351,12 @@ export class EntryService {
   async list(
     query: { q?: string; cursor?: string; limit?: number },
     user: User | null,
+    authorId?: string,
   ): Promise<EntryList> {
-    const filter = publicFilter(search(query.q));
+    const filter = and(
+      publicFilter(search(query.q), user),
+      authorId ? eq(entries.authorId, authorId) : undefined,
+    )!;
     const cursor = decode(query.cursor, 'entries');
     const limit = limitOf(query.limit);
     return this.db.transaction(async (tx) => {
@@ -429,6 +438,11 @@ export class EntryService {
       .from(users)
       .where(inArray(users.avatarAssetId, ids));
     if (usedAsAvatar.length) return invalid('头像图片不能作为条目附件。');
+    const usedAsLogo = await tx
+      .select({ assetId: siteSettings.logoAssetId })
+      .from(siteSettings)
+      .where(inArray(siteSettings.logoAssetId, ids));
+    if (usedAsLogo.length) return invalid('站点 Logo 不能作为条目附件。');
     const usedByOther = new Set<string>();
     const attachedToCurrent = new Set<string>();
     for (const row of used) {
@@ -488,6 +502,7 @@ export class EntryService {
             authorId: user.id,
             title: normalized.title,
             body: normalized.body,
+            visibility: normalized.visibility,
             nsfw: normalized.declarations.nsfw,
             aiGenerated: normalized.declarations.aiGenerated,
           })
@@ -509,7 +524,7 @@ export class EntryService {
       const [existing] = await tx
         .select()
         .from(entries)
-        .where(and(eq(entries.id, parsedId), isNull(entries.deletedAt)))
+        .where(and(eq(entries.id, parsedId), visibleEntries(user)))
         .for('update');
       if (!existing) return notFound();
       if (existing.authorId !== user.id)
@@ -535,6 +550,7 @@ export class EntryService {
       const normalized = normalize({
         title: input.title !== undefined ? input.title : existing.title,
         body: input.body ?? existing.body,
+        visibility: input.visibility ?? existing.visibility,
         imageIds: input.imageIds ?? existingImages,
         fileIds: input.fileIds ?? existingFiles,
         links: input.links ?? existingLinks,
@@ -550,6 +566,7 @@ export class EntryService {
         .set({
           title: normalized.title,
           body: normalized.body,
+          visibility: normalized.visibility,
           nsfw: normalized.declarations.nsfw,
           aiGenerated: normalized.declarations.aiGenerated,
           updatedAt: new Date(),
@@ -588,7 +605,7 @@ export class EntryService {
       const [entry] = await tx
         .select()
         .from(entries)
-        .where(and(eq(entries.id, parsedId), isNull(entries.deletedAt)))
+        .where(and(eq(entries.id, parsedId), visibleEntries(user)))
         .for('update');
       if (!entry) return notFound();
       if (entry.authorId !== user.id && user.role !== 'owner')
@@ -625,7 +642,7 @@ export class EntryService {
       const [entry] = await tx
         .select({ id: entries.id })
         .from(entries)
-        .where(and(eq(entries.id, parsedId), isNull(entries.deletedAt)))
+        .where(and(eq(entries.id, parsedId), visibleEntries(user)))
         .for('update');
       if (!entry) return notFound();
       if (liked)
@@ -643,7 +660,7 @@ export class EntryService {
   async listLikes(query: PaginationQuery, user: User): Promise<EntryList> {
     const cursor = decode(query.cursor, 'likes');
     const limit = limitOf(query.limit);
-    const filter = and(eq(likes.userId, user.id), isNull(entries.deletedAt));
+    const filter = and(eq(likes.userId, user.id), visibleEntries(user));
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`set transaction isolation level repeatable read`);
       const [total] = await tx
@@ -686,7 +703,7 @@ export class EntryService {
     });
   }
 
-  async suggestTags(query: TagsQuery): Promise<string[]> {
+  async suggestTags(query: TagsQuery, user: User | null = null): Promise<string[]> {
     const q = search(query.q);
     const rows = await this.db
       .select({ name: tags.name })
@@ -695,7 +712,7 @@ export class EntryService {
         and(
           q ? sql`${tags.name} ilike ${pattern(q)} escape '\\'` : undefined,
           sql`exists (select 1 from ${entryTags} join ${entries} on ${entries.id} = ${entryTags.entryId}
-        where ${entryTags.tagId} = ${tags.id} and ${entries.deletedAt} is null)`,
+        where ${entryTags.tagId} = ${tags.id} and ${visibleEntries(user)})`,
         ),
       )
       .orderBy(tags.normalizedName)

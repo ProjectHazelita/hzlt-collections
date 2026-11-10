@@ -8,10 +8,13 @@ import {
   ErrorResponseSchema,
   PasswordChangeInputSchema,
   ProfileInputSchema,
+  ProfileSchema,
   type Session,
   SessionSchema,
   UnsafeRequestHeadersSchema,
   type User,
+  UsernameAvailabilityQuerySchema,
+  UsernameAvailabilitySchema,
 } from '@hcl/contracts';
 import {
   AuthService,
@@ -211,6 +214,31 @@ export async function installAuth(
         });
       }
       return { user: request.currentUser, csrfToken: request.session.csrfToken! };
+    },
+  );
+
+  routes.get(
+    '/api/v1/auth/username-availability',
+    {
+      config: { rateLimit: { max: 60, timeWindow: 60_000 } },
+      schema: {
+        querystring: UsernameAvailabilityQuerySchema,
+        response: { 200: UsernameAvailabilitySchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      return { available: await auth.usernameAvailable(request.query.username) };
+    },
+  );
+  routes.get(
+    '/api/v1/me/profile',
+    {
+      schema: { response: { 200: ProfileSchema, ...errors } },
+    },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      return profile.get(request.requireUser().id);
     },
   );
 

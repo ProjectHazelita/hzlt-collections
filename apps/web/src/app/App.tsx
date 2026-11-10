@@ -21,7 +21,10 @@ import { EntryDetail } from '../features/EntryDetail';
 import { FeedPage } from '../features/FeedPage';
 import { SettingsLayout } from '../features/settings/SettingsLayout';
 import { SettingsProfile } from '../features/settings/SettingsProfile';
+import { SiteSettings } from '../features/settings/SiteSettings';
+import { UserPage } from '../features/users/UserPage';
 import { errorMessage, useAuth } from './api';
+import { useSite } from './site';
 
 function SearchBar() {
   const [params] = useSearchParams();
@@ -129,8 +132,25 @@ function AccountArea() {
         <div className="account-menu" role="menu" aria-label="账号">
           <p className="account-name">{user.displayName}</p>
           <p className="account-role">
-            @{user.username} · {user.role === 'owner' ? '站点所有者' : '注册用户'}
+            @{user.username}
+            {user.bio ? ` · ${user.bio}` : ''}
           </p>
+          <Link
+            className="menu-button"
+            role="menuitem"
+            to={`/users/${encodeURIComponent(user.username)}`}
+            onClick={() => setOpen(false)}
+          >
+            个人主页
+          </Link>
+          <Link
+            className="menu-button"
+            role="menuitem"
+            to="/settings/profile"
+            onClick={() => setOpen(false)}
+          >
+            设置
+          </Link>
           <button
             className="menu-button"
             type="button"
@@ -152,21 +172,24 @@ function AccountArea() {
 }
 
 function Navigation() {
+  const { site } = useSite();
   return (
     <nav className="navigation" aria-label="主导航">
       <div className="navigation-top">
-        <Link to="/" className="brand" aria-label="hzlt!Collections 首页">
-          <img src={logo} alt="hzlt!Collections" />
+        <Link to="/" className="brand" aria-label={`${site.title} 首页`}>
+          <img src={site.logoUrl || logo} alt={site.title} referrerPolicy="no-referrer" />
         </Link>
-        <NavLink end to="/" aria-label="首页">
-          <Home size={30} />
-        </NavLink>
-        <NavLink to="/likes" aria-label="喜欢">
-          <Heart size={30} />
-        </NavLink>
-        <NavLink to="/publish" aria-label="发布条目">
-          <FilePlusCorner size={30} />
-        </NavLink>
+        <div className="navigation-icons">
+          <NavLink end to="/" aria-label="首页">
+            <Home size={30} />
+          </NavLink>
+          <NavLink to="/likes" aria-label="喜欢">
+            <Heart size={30} />
+          </NavLink>
+          <NavLink to="/publish" aria-label="发布条目">
+            <FilePlusCorner size={30} />
+          </NavLink>
+        </div>
       </div>
       <div className="navigation-bottom">
         <NavLink to="/settings" aria-label="设置">
@@ -179,6 +202,7 @@ function Navigation() {
 
 function AppShell() {
   const location = useLocation();
+  const { site } = useSite();
   const composer =
     location.pathname === '/publish' || /^\/entries\/[^/]+\/edit/.test(location.pathname);
   return (
@@ -187,8 +211,14 @@ function AppShell() {
       <main className={composer ? 'main-content composer-main' : 'main-content'}>
         {!composer && (
           <div className="top-bar">
-            <Link to="/" className="mobile-brand" aria-label="hzlt!Collections 首页">
-              h!Cl
+            <Link to="/" className="mobile-brand" aria-label={`${site.title} 首页`}>
+              <img
+                src={site.logoUrl || logo}
+                width="32"
+                height="32"
+                alt={site.title}
+                referrerPolicy="no-referrer"
+              />
             </Link>
             <SearchBar />
             <AccountArea />
@@ -230,10 +260,10 @@ function RequireUser() {
   return <Outlet />;
 }
 
-function OwnerSettings() {
+function OwnerSettings({ site = false }: { site?: boolean }) {
   const { user } = useAuth();
   if (user?.role !== 'owner') return <Navigate replace to="/settings/profile" />;
-  return <ContentManagement />;
+  return site ? <SiteSettings /> : <ContentManagement />;
 }
 
 export function App() {
@@ -246,6 +276,7 @@ export function App() {
         <Route element={<AppShell />}>
           <Route index element={<FeedPage />} />
           <Route path="search" element={<FeedPage kind="search" />} />
+          <Route path="users/:username" element={<UserPage />} />
           <Route element={<RequireUser />}>
             <Route path="likes" element={<FeedPage kind="likes" />} />
             <Route path="publish" element={<EntryComposer />} />
@@ -253,6 +284,7 @@ export function App() {
             <Route path="settings" element={<SettingsLayout />}>
               <Route index element={<Navigate replace to="profile" />} />
               <Route path="profile" element={<SettingsProfile />} />
+              <Route path="site" element={<OwnerSettings site />} />
               <Route path="content" element={<OwnerSettings />} />
             </Route>
           </Route>

@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ApiError, errorMessage, isCancelled, safeReturnTo, useAuth } from '../../app/api';
+import { useSite } from '../../app/site';
+import logo from '../../assets/logo.svg';
 import './auth.css';
 
 type Kind = 'login' | 'register';
@@ -12,6 +14,7 @@ export function AuthForm({ kind }: { kind: Kind }) {
 
 function AuthFields({ kind }: { kind: Kind }) {
   const auth = useAuth();
+  const { site, loading: siteLoading, error: siteError, refresh: refreshSite } = useSite();
   const navigate = useNavigate();
   const [search] = useSearchParams();
   const returnTo = safeReturnTo(search.get('returnTo'));
@@ -26,6 +29,67 @@ function AuthFields({ kind }: { kind: Kind }) {
   const [submitting, setSubmitting] = useState(false);
   const active = useRef(true);
   const busy = useRef(false);
+  const [availability, setAvailability] = useState<{
+    username: string;
+    status: 'checking' | 'available' | 'taken' | 'error';
+    message?: string;
+  } | null>(null);
+  const normalizedUsername = username.trim().normalize('NFKC');
+  const validUsername = /^[\p{L}\p{N}_-]{3,32}$/u.test(normalizedUsername);
+  const usernameStatus = availability?.username === normalizedUsername ? availability : null;
+  const registrationClosed = register && !site.registrationOpen;
+
+  useEffect(() => {
+    if (
+      !register ||
+      !validUsername ||
+      registrationClosed ||
+      siteLoading ||
+      auth.loading ||
+      auth.user
+    )
+      return;
+    const controller = new AbortController();
+    const captured = auth.epoch.current;
+    const timer = window.setTimeout(() => {
+      setAvailability({ username: normalizedUsername, status: 'checking' });
+      void auth
+        .request<{ available: boolean }>(
+          `/api/v1/auth/username-availability?${new URLSearchParams({ username: normalizedUsername })}`,
+          { signal: controller.signal },
+        )
+        .then((result) => {
+          if (controller.signal.aborted || captured !== auth.epoch.current) return;
+          setAvailability({
+            username: normalizedUsername,
+            status: result.available ? 'available' : 'taken',
+          });
+        })
+        .catch((cause) => {
+          if (controller.signal.aborted || captured !== auth.epoch.current || isCancelled(cause))
+            return;
+          setAvailability({
+            username: normalizedUsername,
+            status: 'error',
+            message: errorMessage(cause),
+          });
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    register,
+    normalizedUsername,
+    validUsername,
+    registrationClosed,
+    siteLoading,
+    auth.loading,
+    auth.user,
+    auth.request,
+    auth.epoch,
+  ]);
 
   useEffect(() => {
     active.current = true;
@@ -39,12 +103,22 @@ function AuthFields({ kind }: { kind: Kind }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy.current || auth.loading || auth.error || auth.user || needsSession) return;
+    if (
+      busy.current ||
+      auth.loading ||
+      auth.error ||
+      auth.user ||
+      needsSession ||
+      (register && (siteLoading || siteError || registrationClosed))
+    )
+      return;
     const next: FieldErrors = {};
     const name = username.trim();
     const normalized = name.normalize('NFKC');
     if (!/^[\p{L}\p{N}_-]{3,32}$/u.test(normalized))
       next.username = '用户名需为 3–32 个字符，仅可使用字母、数字、下划线和短横线。';
+    else if (register && usernameStatus?.status === 'taken')
+      next.username = '这个用户名已被使用，请换一个。';
     const length = Array.from(password).length;
     if (length < 12 || length > 128) next.password = '密码需为 12–128 个字符。';
     if (register && password !== confirmation) next.confirmation = '两次输入的密码不一致。';
@@ -91,18 +165,10 @@ function AuthFields({ kind }: { kind: Kind }) {
 
   return (
     <main className="auth-page">
-      <section className="auth-brand" aria-label="hzlt!Collections">
-        <p className="auth-wordmark">hzlt!Collections</p>
-        <p className="auth-tagline">
-          把创作、日常和灵光一闪，
-          <br />
-          留在同一个地方。
-        </p>
-        <p className="auth-description">
-          一个属于社群的内容分享空间。
-          <br />
-          无需登录也可以浏览，注册后即可发布和喜欢。
-        </p>
+      <section className="auth-brand" aria-label={site.title}>
+        <img className="auth-logo" src={site.logoUrl ?? logo} alt="" />
+        <p className="auth-wordmark">{site.title}</p>
+        <p className="auth-description">{site.description}</p>
         <Link className="auth-browse" to="/">
           先随便看看
         </Link>
@@ -114,10 +180,28 @@ function AuthFields({ kind }: { kind: Kind }) {
         aria-labelledby={`${id}-title`}
         aria-busy={submitting || auth.loading}
       >
-        <h1 id={`${id}-title`}>{register ? '加入 hzlt!Collections' : '欢迎回来'}</h1>
+        <h1 id={`${id}-title`}>{register ? `加入 ${site.title}` : '欢迎回来'}</h1>
         <p className="muted">
           {register ? '注册后，就可以开始分享。' : '登录后继续发布和喜欢内容。'}
         </p>
+        {register && siteLoading && (
+          <p role="status" className="muted">
+            正在获取注册设置…
+          </p>
+        )}
+        {register && registrationClosed && !siteLoading && (
+          <p role="status" className="auth-notice">
+            站点暂未开放注册，你仍可浏览或登录已有账号。
+          </p>
+        )}
+        {register && Boolean(siteError) && (
+          <div className="auth-notice" role="alert">
+            <p>无法获取注册设置：{errorMessage(siteError)}</p>
+            <button type="button" className="secondary" onClick={() => void refreshSite()}>
+              重试
+            </button>
+          </div>
+        )}
         <div className="auth-field">
           <label htmlFor={`${id}-username`}>用户名</label>
           <input
@@ -129,16 +213,41 @@ function AuthFields({ kind }: { kind: Kind }) {
             required
             value={username}
             disabled={submitting}
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => {
+              setUsername(event.target.value);
+              if (event.target.value.trim().normalize('NFKC') !== normalizedUsername)
+                setAvailability(null);
+              setFields((current) => ({ ...current, username: undefined }));
+              setFailure(null);
+            }}
             placeholder="输入用户名"
-            aria-invalid={Boolean(fields.username)}
-            aria-describedby={fields.username ? `${id}-username-error` : undefined}
+            aria-invalid={
+              Boolean(fields.username) || (register && usernameStatus?.status === 'taken')
+            }
+            aria-describedby={`${id}-username-status${fields.username ? ` ${id}-username-error` : ''}`}
           />
           {fields.username && (
             <small className="error" id={`${id}-username-error`}>
               {fields.username}
             </small>
           )}
+          <small
+            id={`${id}-username-status`}
+            className={usernameStatus?.status === 'taken' ? 'error' : 'auth-hint'}
+            role="status"
+          >
+            {register && username && !validUsername
+              ? '用户名需为 3–32 个字符，仅可使用字母、数字、下划线和短横线。'
+              : register && validUsername && !registrationClosed
+                ? usernameStatus?.status === 'available'
+                  ? '这个用户名可以使用。'
+                  : usernameStatus?.status === 'taken'
+                    ? '这个用户名已被使用，请换一个。'
+                    : usernameStatus?.status === 'error'
+                      ? `暂时无法查询用户名：${usernameStatus.message}，提交时将再次校验。`
+                      : '正在检查用户名…'
+                : ''}
+          </small>
         </div>
         <div className="auth-field">
           <label htmlFor={`${id}-password`}>密码</label>
@@ -150,7 +259,16 @@ function AuthFields({ kind }: { kind: Kind }) {
             required
             value={password}
             disabled={submitting}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              setPassword(next);
+              const length = Array.from(next).length;
+              setFields((current) => ({
+                ...current,
+                password: length >= 12 && length <= 128 ? undefined : current.password,
+                confirmation: next === confirmation ? undefined : current.confirmation,
+              }));
+            }}
             placeholder="输入密码"
             aria-invalid={Boolean(fields.password)}
             aria-describedby={fields.password ? `${id}-password-error` : undefined}
@@ -172,7 +290,12 @@ function AuthFields({ kind }: { kind: Kind }) {
               required
               value={confirmation}
               disabled={submitting}
-              onChange={(event) => setConfirmation(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setConfirmation(next);
+                if (next === password)
+                  setFields((current) => ({ ...current, confirmation: undefined }));
+              }}
               placeholder="再次输入密码"
               aria-invalid={Boolean(fields.confirmation)}
               aria-describedby={`${id}-confirmation-hint${fields.confirmation ? ` ${id}-confirmation-error` : ''}`}
@@ -216,17 +339,28 @@ function AuthFields({ kind }: { kind: Kind }) {
           className="primary"
           type="submit"
           disabled={
-            submitting || auth.loading || Boolean(auth.error) || needsSession || Boolean(auth.user)
+            submitting ||
+            auth.loading ||
+            Boolean(auth.error) ||
+            needsSession ||
+            Boolean(auth.user) ||
+            (register &&
+              (siteLoading ||
+                Boolean(siteError) ||
+                registrationClosed ||
+                usernameStatus?.status === 'taken'))
           }
         >
           {submitting ? (register ? '正在注册…' : '正在登录…') : register ? '注册并进入' : '登录'}
         </button>
-        <Link
-          className="auth-switch secondary"
-          to={`/${register ? 'login' : 'register'}?${new URLSearchParams({ returnTo })}`}
-        >
-          {register ? '已有账号？登录' : '没有账号？注册'}
-        </Link>
+        {(register || site.registrationOpen) && (
+          <Link
+            className="auth-switch secondary"
+            to={`/${register ? 'login' : 'register'}?${new URLSearchParams({ returnTo })}`}
+          >
+            {register ? '已有账号？登录' : '没有账号？注册'}
+          </Link>
+        )}
       </form>
     </main>
   );

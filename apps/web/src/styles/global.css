@@ -186,19 +186,36 @@ h2 {
   align-items: center;
   gap: 28px;
 }
+.navigation-icons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
 .navigation a:not(.brand),
 .navigation-idle {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 30px;
+  height: 30px;
   border-radius: 10px;
-  color: var(--icon-muted);
+  color: var(--text-primary);
 }
-.navigation a.active {
-  color: var(--action-primary);
+.navigation a:not(.brand)::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  z-index: -1;
+  border-radius: 10px;
+}
+.navigation a.active::before {
   background: var(--accent);
+}
+.navigation svg {
+  stroke-width: 1.6;
 }
 .navigation-idle {
   cursor: default;
@@ -293,6 +310,8 @@ h2 {
   justify-content: center;
   width: 40px;
   height: 40px;
+  padding: 0;
+  overflow: hidden;
   border-radius: 8px;
   background: var(--accent);
   color: var(--action-primary);
@@ -1174,6 +1193,9 @@ h2 {
     justify-content: space-between;
     gap: 0;
   }
+  .navigation-icons {
+    display: contents;
+  }
   .navigation .brand {
     display: none;
   }
@@ -1185,10 +1207,18 @@ h2 {
   .navigation-idle {
     width: 42px;
     height: 42px;
+    color: var(--icon-muted);
+  }
+  .navigation a:not(.brand)::before {
+    inset: 0;
+  }
+  .navigation a.active {
+    color: var(--action-primary);
   }
   .navigation svg {
     width: 30px;
     height: 30px;
+    stroke-width: 2;
   }
   .account-menu {
     top: calc(100% + 8px);

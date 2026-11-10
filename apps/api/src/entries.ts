@@ -139,7 +139,7 @@ export async function installEntries(
       {
         schema: { querystring: TagsQuerySchema, response: { 200: TagsResponseSchema, ...errors } },
       },
-      async (request) => entries.suggestTags(request.query),
+      async (request) => entries.suggestTags(request.query, request.currentUser),
     );
 
     routes.get(

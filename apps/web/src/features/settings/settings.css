@@ -252,6 +252,66 @@
   height: 40px;
 }
 
+.settings-field textarea,
+.settings-field select {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+.settings-field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.settings-social {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+.settings-social legend {
+  padding: 0 4px;
+}
+.settings-social-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.settings-social-row input {
+  width: 100%;
+  min-width: 0;
+}
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 22px;
+}
+.settings-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--action-primary);
+}
+@media (max-width: 540px) {
+  .settings-social-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .settings-social-row .settings-field:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 767px) {
   .settings-page {
     padding: 0 0 24px;

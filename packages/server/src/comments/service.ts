@@ -7,9 +7,10 @@ import {
   MAX_COMMENT_LENGTH,
   type User,
 } from '@hcl/contracts';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { Value } from 'typebox/value';
 import { comments, entries, users } from '../db/schema.js';
+import { visibleEntries } from '../entries/access.js';
 import { entryId } from '../entries/service.js';
 import { DomainError } from '../errors.js';
 import type { Database } from '../index.js';
@@ -43,19 +44,19 @@ function toComment(row: CommentRow, replyTo: CommentRow | null): Comment {
 export class CommentService {
   constructor(private readonly db: Database) {}
 
-  private async visibleEntry(db: Pick<Database, 'select'>, id: bigint) {
+  private async visibleEntry(db: Pick<Database, 'select'>, id: bigint, user: User | null) {
     const [entry] = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(and(eq(entries.id, id), isNull(entries.deletedAt)))
+      .where(and(eq(entries.id, id), visibleEntries(user)))
       .limit(1);
     if (!entry) return notFound();
     return entry;
   }
 
-  async list(entry: string): Promise<CommentList> {
+  async list(entry: string, user: User | null = null): Promise<CommentList> {
     const parsedId = entryId(entry);
-    await this.visibleEntry(this.db, parsedId);
+    await this.visibleEntry(this.db, parsedId, user);
     const rows: CommentRow[] = (
       await this.db
         .select({
@@ -68,7 +69,12 @@ export class CommentService {
         })
         .from(comments)
         .innerJoin(users, eq(users.id, comments.authorId))
-        .where(eq(comments.entryId, parsedId))
+        .where(
+          and(
+            eq(comments.entryId, parsedId),
+            sql`exists (select 1 from ${entries} where ${entries.id} = ${comments.entryId} and ${visibleEntries(user)})`,
+          ),
+        )
         .orderBy(asc(comments.createdAt), asc(comments.id))
     ).map((row) => ({ ...row, author: toPublicUser(row.author) }));
     const byId = new Map(rows.map((row) => [row.id, row]));
@@ -108,7 +114,7 @@ export class CommentService {
     if (Array.from(body).length > MAX_COMMENT_LENGTH) return invalid('评论最多 1000 个字符。');
     if (/\p{Cc}/u.test(body.replaceAll('\n', ''))) return invalid('评论包含无效字符。');
     return this.db.transaction(async (tx) => {
-      await this.visibleEntry(tx, parsedId);
+      await this.visibleEntry(tx, parsedId, user);
       let parent: CommentRow | undefined;
       if (input.parentId) {
         const [row] = await tx

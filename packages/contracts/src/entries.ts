@@ -5,6 +5,15 @@ export const MAX_ENTRY_IMAGES = 20;
 export const MAX_ENTRY_FILES = 5;
 export const MAX_ENTRY_LINKS = 5;
 
+export const EntryVisibilitySchema = Type.Union([
+  Type.Literal('public'),
+  Type.Literal('registered'),
+  Type.Literal('followers'),
+  Type.Literal('following'),
+  Type.Literal('private'),
+]);
+export type EntryVisibility = Static<typeof EntryVisibilitySchema>;
+
 export const ImageFormatSchema = Type.Union([
   Type.Literal('jpeg'),
   Type.Literal('png'),
@@ -85,6 +94,7 @@ export const EntrySchema = Type.Object(
   {
     id: EntryIdSchema,
     author: UserSchema,
+    visibility: EntryVisibilitySchema,
     title: Type.Union([Type.String({ maxLength: 200 }), Type.Null()]),
     body: Type.String({ maxLength: 10000 }),
     tags: TagNamesSchema,
@@ -123,6 +133,7 @@ const LinksSchema = Type.Array(EntryLinkInputSchema, { maxItems: MAX_ENTRY_LINKS
 export const EntryInputSchema = Type.Object(
   {
     title: Type.Optional(TitleInputSchema),
+    visibility: Type.Optional(EntryVisibilitySchema),
     body: Type.String({
       maxLength: 10000,
       description:
@@ -142,6 +153,7 @@ export type EntryInput = Static<typeof EntryInputSchema>;
 export const EntryPatchSchema = Type.Object(
   {
     title: Type.Optional(TitleInputSchema),
+    visibility: Type.Optional(EntryVisibilitySchema),
     body: Type.Optional(Type.String({ maxLength: 10000 })),
     imageIds: Type.Optional(ImageIdsSchema),
     fileIds: Type.Optional(FileIdsSchema),

@@ -7,7 +7,8 @@ import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import type { JobWithMetadata, PgBoss } from 'pg-boss';
 import { MediaProcessingError, processImage } from './supervisor.js';
 
-const { assets, entries, entryAttachments, sessions, idempotencyKeys, users } = schema;
+const { assets, entries, entryAttachments, sessions, idempotencyKeys, siteSettings, users } =
+  schema;
 const workOptions = {
   batchSize: 1,
   localConcurrency: 1,
@@ -160,6 +161,12 @@ export async function startWorker({ db, boss, storage, config }: Options): Promi
         .where(eq(users.avatarAssetId, id))
         .limit(1);
       if (avatar) return;
+      const [logo] = await tx
+        .select({ id: siteSettings.id })
+        .from(siteSettings)
+        .where(eq(siteSettings.logoAssetId, id))
+        .limit(1);
+      if (logo) return;
       const expired =
         asset.state === 'ready' && asset.expiresAt !== null && asset.expiresAt <= new Date();
       if (asset.state !== 'deleted' && asset.state !== 'failed' && !expired) return;

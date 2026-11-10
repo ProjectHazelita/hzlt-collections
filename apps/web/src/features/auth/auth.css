@@ -20,19 +20,21 @@
 .auth-card h1 {
   margin: 0;
 }
+.auth-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
 .auth-wordmark {
   font-size: 40px;
   line-height: 52px;
   font-weight: 600;
 }
-.auth-tagline {
-  font-size: 24px;
-  line-height: 36px;
-}
 .auth-description {
   font-size: 14px;
   line-height: 24px;
   color: var(--text-secondary);
+  white-space: pre-line;
 }
 .auth-browse {
   display: inline-flex;

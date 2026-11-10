@@ -33,7 +33,7 @@ export async function installComments(
           response: { 200: CommentListSchema, ...errors },
         },
       },
-      async (request) => comments.list(request.params.id),
+      async (request) => comments.list(request.params.id, request.currentUser),
     );
 
     routes.post(

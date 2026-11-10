@@ -1,4 +1,10 @@
-import type { Session, UploadAccepted, UploadStatus } from '@hcl/contracts';
+import type {
+  Profile as EditableProfile,
+  Pronouns,
+  Session,
+  UploadAccepted,
+  UploadStatus,
+} from '@hcl/contracts';
 import { ImagePlus, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError, errorMessage, isCancelled, useAuth } from '../../app/api';
@@ -19,7 +25,34 @@ function avatarError(status: UploadStatus) {
 }
 
 export function SettingsProfile() {
+  const { user } = useAuth();
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  return user ? (
+    <ProfileEditor
+      key={`${user.id}:${loadAttempt}`}
+      onRetry={() => setLoadAttempt((value) => value + 1)}
+    />
+  ) : null;
+}
+
+function ProfileEditor({ onRetry }: { onRetry: () => void }) {
   const { user, request, epoch, applySession } = useAuth();
+  const [details, setDetails] = useState<Omit<EditableProfile, 'displayName' | 'avatarAssetId'>>({
+    bio: '',
+    email: '',
+    pronouns: 'not specified',
+    location: '',
+    socialLinks: [],
+    showEmail: false,
+    showLocation: false,
+    showSocialLinks: false,
+    showFollowing: true,
+    showFollowers: true,
+  });
+  const [baseline, setBaseline] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const mounted = useRef(true);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [avatarAssetId, setAvatarAssetId] = useState<string | null>(
     avatarId(user?.avatarUrl ?? null),
@@ -32,6 +65,7 @@ export function SettingsProfile() {
   const [profileFields, setProfileFields] = useState<Record<string, string>>({});
   const [profileSuccess, setProfileSuccess] = useState('');
   const input = useRef<HTMLInputElement>(null);
+  const socialLinkKeys = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
   const objectUrl = useRef<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -42,13 +76,42 @@ export function SettingsProfile() {
   const [passwordFields, setPasswordFields] = useState<Record<string, string>>({});
   const [passwordSuccess, setPasswordSuccess] = useState('');
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const abort = new AbortController();
+    setLoading(true);
+    setLoadError('');
+    void request<EditableProfile>('/api/v1/me/profile', { signal: abort.signal })
+      .then((profile) => {
+        if (abort.signal.aborted) return;
+        const { displayName: name, avatarAssetId: avatar, ...rest } = profile;
+        setDisplayName(name);
+        setAvatarAssetId(avatar);
+        socialLinkKeys.current = rest.socialLinks.map(() => uuid());
+        setDetails(rest);
+        setBaseline(JSON.stringify(rest));
+        setLoading(false);
+      })
+      .catch((cause) => {
+        if (abort.signal.aborted || isCancelled(cause)) return;
+        setLoadError(errorMessage(cause));
+        setLoading(false);
+      });
+    return () => abort.abort();
+  }, [request]);
+
+  function updateDetails<K extends keyof typeof details>(key: K, value: (typeof details)[K]) {
+    setDetails((previous) => ({ ...previous, [key]: value }));
+    setProfileSuccess('');
+  }
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       controller.current?.abort();
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   function showPreview(url: string) {
     if (objectUrl.current) {
@@ -141,15 +204,17 @@ export function SettingsProfile() {
     try {
       const next = await request<Session>('/api/v1/me/profile', {
         method: 'PATCH',
-        json: { displayName: name, avatarAssetId },
+        json: { displayName: name, avatarAssetId, ...details },
       });
+      if (!mounted.current) return;
+      setBaseline(JSON.stringify(details));
       applySession(next);
       setDisplayName(next.user?.displayName ?? name);
       setAvatarAssetId(avatarId(next.user?.avatarUrl ?? null));
       showPreview(next.user?.avatarUrl ?? '');
       setProfileSuccess('个人资料已更新。');
     } catch (cause) {
-      if (!isCancelled(cause)) {
+      if (mounted.current && !isCancelled(cause)) {
         if (cause instanceof ApiError && cause.fields && Object.keys(cause.fields).length) {
           setProfileFields(cause.fields);
         } else {
@@ -157,7 +222,7 @@ export function SettingsProfile() {
         }
       }
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   }
 
@@ -185,13 +250,14 @@ export function SettingsProfile() {
         method: 'PUT',
         json: { currentPassword, newPassword },
       });
+      if (!mounted.current) return;
       applySession(next);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setPasswordSuccess('密码已更新，其他设备上的登录已失效。');
     } catch (cause) {
-      if (!isCancelled(cause)) {
+      if (mounted.current && !isCancelled(cause)) {
         if (cause instanceof ApiError && cause.fields && Object.keys(cause.fields).length) {
           setPasswordFields(cause.fields);
         } else {
@@ -199,24 +265,42 @@ export function SettingsProfile() {
         }
       }
     } finally {
-      setChangingPassword(false);
+      if (mounted.current) setChangingPassword(false);
     }
   }
 
   if (!user) return null;
   const nameDirty = displayName.trim() !== user.displayName;
   const avatarDirty = avatarAssetId !== avatarId(user.avatarUrl);
+  const detailsDirty = JSON.stringify(details) !== baseline;
   const profileValid =
     Array.from(displayName.trim()).length >= 1 &&
     Array.from(displayName.trim()).length <= 32 &&
     !uploading;
 
+  if (loading)
+    return (
+      <div className="state-block" role="status">
+        正在加载个人资料…
+      </div>
+    );
+  if (loadError)
+    return (
+      <div className="settings-card">
+        <p className="error" role="alert">
+          {loadError}
+        </p>
+        <button className="secondary" type="button" onClick={onRetry}>
+          重新加载
+        </button>
+      </div>
+    );
   return (
     <div className="settings-stack">
       <form className="settings-card" onSubmit={saveProfile}>
         <header className="settings-section-heading">
           <h2>个人资料</h2>
-          <p>昵称与头像会展示在条目、评论和账号菜单中。</p>
+          <p>昵称、头像、个性签名和代词公开显示，其他信息由你选择是否公开。</p>
         </header>
         <div className="settings-avatar-row">
           <div className="settings-avatar">
@@ -294,6 +378,171 @@ export function SettingsProfile() {
           <span className="settings-readonly">@{user.username}</span>
           <span className="settings-hint">登录用户名创建后不可修改。</span>
         </div>
+        <label className="settings-field">
+          <span className="settings-label">个性签名</span>
+          <textarea
+            value={details.bio}
+            maxLength={160}
+            rows={3}
+            onChange={(event) => updateDetails('bio', event.target.value)}
+          />
+          <span className="settings-hint">最多 160 个字符，将显示在作品署名和个人主页。</span>
+        </label>
+        <label className="settings-field">
+          <span className="settings-label">代词</span>
+          <select
+            value={details.pronouns}
+            onChange={(event) => updateDetails('pronouns', event.target.value as Pronouns)}
+          >
+            <option value="not specified">不指定</option>
+            <option value="they/them">they/them</option>
+            <option value="he/him">he/him</option>
+            <option value="she/her">she/her</option>
+          </select>
+        </label>
+        <div className="settings-field">
+          <label className="settings-label" htmlFor="profile-email">
+            邮箱
+          </label>
+          <input
+            id="profile-email"
+            type="email"
+            autoComplete="email"
+            maxLength={254}
+            value={details.email}
+            onChange={(event) => updateDetails('email', event.target.value)}
+          />
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={details.showEmail}
+              onChange={(event) => updateDetails('showEmail', event.target.checked)}
+            />
+            公开邮箱
+          </label>
+        </div>
+        <div className="settings-field">
+          <label className="settings-label" htmlFor="profile-location">
+            所在地
+          </label>
+          <input
+            id="profile-location"
+            maxLength={100}
+            autoComplete="address-level2"
+            value={details.location}
+            onChange={(event) => updateDetails('location', event.target.value)}
+          />
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={details.showLocation}
+              onChange={(event) => updateDetails('showLocation', event.target.checked)}
+            />
+            公开所在地
+          </label>
+        </div>
+        <fieldset className="settings-social">
+          <legend className="settings-label">自定义社交链接</legend>
+          <p className="settings-hint">最多 5 个，支持 HTTP 或 HTTPS 链接。</p>
+          {details.socialLinks.map((link, index) => (
+            <div className="settings-social-row" key={socialLinkKeys.current[index]}>
+              <label className="settings-field">
+                <span className="settings-label">链接 {index + 1} 名称</span>
+                <input
+                  required
+                  maxLength={50}
+                  value={link.label}
+                  onChange={(event) =>
+                    updateDetails(
+                      'socialLinks',
+                      details.socialLinks.map((item, i) =>
+                        i === index ? { ...item, label: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <label className="settings-field">
+                <span className="settings-label">网址</span>
+                <input
+                  required
+                  type="url"
+                  pattern="https?://.+"
+                  maxLength={2048}
+                  value={link.url}
+                  onChange={(event) =>
+                    updateDetails(
+                      'socialLinks',
+                      details.socialLinks.map((item, i) =>
+                        i === index ? { ...item, url: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="settings-text-button"
+                aria-label={`移除链接 ${index + 1}`}
+                onClick={() => {
+                  socialLinkKeys.current.splice(index, 1);
+                  updateDetails(
+                    'socialLinks',
+                    details.socialLinks.filter((_, i) => i !== index),
+                  );
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+          <button
+            className="secondary settings-small-button"
+            type="button"
+            disabled={details.socialLinks.length >= 5}
+            onClick={() => {
+              socialLinkKeys.current.push(uuid());
+              updateDetails('socialLinks', [...details.socialLinks, { label: '', url: '' }]);
+            }}
+          >
+            添加链接
+          </button>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={details.showSocialLinks}
+              onChange={(event) => updateDetails('showSocialLinks', event.target.checked)}
+            />
+            公开社交链接
+          </label>
+        </fieldset>
+        <fieldset className="settings-social">
+          <legend className="settings-label">关注隐私</legend>
+          <p className="settings-hint">关闭后，其他人只能查看人数，无法查看列表成员。</p>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={details.showFollowing}
+              onChange={(event) => updateDetails('showFollowing', event.target.checked)}
+            />
+            公开我关注的用户列表
+          </label>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={details.showFollowers}
+              onChange={(event) => updateDetails('showFollowers', event.target.checked)}
+            />
+            公开我的粉丝列表
+          </label>
+        </fieldset>
+        {Object.entries(profileFields)
+          .filter(([key]) => key !== 'displayName')
+          .map(([key, message]) => (
+            <p className="error" role="alert" key={key}>
+              {message}
+            </p>
+          ))}
         {profileError && (
           <p className="error" role="alert">
             {profileError}
@@ -308,7 +557,9 @@ export function SettingsProfile() {
           <button
             className="primary"
             type="submit"
-            disabled={!profileValid || saving || uploading || (!nameDirty && !avatarDirty)}
+            disabled={
+              !profileValid || saving || uploading || (!nameDirty && !avatarDirty && !detailsDirty)
+            }
           >
             {saving ? '正在保存…' : '保存个人资料'}
           </button>

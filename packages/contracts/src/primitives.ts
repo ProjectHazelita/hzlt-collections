@@ -21,6 +21,7 @@ export const UserSchema = Type.Object(
     id: UuidSchema,
     username: Type.String(),
     displayName: Type.String({ maxLength: 32 }),
+    bio: Type.String({ maxLength: 160 }),
     role: UserRoleSchema,
     avatarUrl: Type.Union([Type.Null(), Type.String({ pattern: '^/media/[^/]+/avatar$' })]),
   },

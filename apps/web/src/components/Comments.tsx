@@ -1,10 +1,11 @@
 import type { Comment, CommentList } from '@hcl/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { MessageCircle, SendHorizontal, X } from 'lucide-react';
-import { type FormEvent, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { errorMessage, isCancelled, queryClient, useAuth } from '../app/api';
 import { UserAvatar } from './UserAvatar';
+import './gallery-content.css';
 
 function CommentRow({
   comment,
@@ -18,10 +19,20 @@ function CommentRow({
   const { user } = useAuth();
   return (
     <div className={fresh ? 'comment-row comment-new' : 'comment-row'}>
-      <UserAvatar user={comment.author} className="avatar comment-avatar" />
+      <Link
+        to={`/users/${encodeURIComponent(comment.author.username)}`}
+        aria-label={`查看 ${comment.author.displayName} 的主页`}
+      >
+        <UserAvatar user={comment.author} className="avatar comment-avatar" />
+      </Link>
       <div className="comment-content">
         <div className="comment-attribution">
-          <span className="comment-name">{comment.author.displayName}</span>
+          <Link
+            className="comment-name"
+            to={`/users/${encodeURIComponent(comment.author.username)}`}
+          >
+            {comment.author.displayName}
+          </Link>
           {comment.replyTo && (
             <span className="comment-reply-to">回复 {comment.replyTo.displayName}</span>
           )}
@@ -38,7 +49,7 @@ function CommentRow({
   );
 }
 
-export function Comments({ entryId }: { entryId: string }) {
+export function Comments({ entryId, children }: { entryId: string; children: ReactNode }) {
   const { user, request, epoch } = useAuth();
   const location = useLocation();
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
@@ -85,46 +96,51 @@ export function Comments({ entryId }: { entryId: string }) {
 
   const total = result.data?.total ?? 0;
   return (
-    <section className="comments" aria-label="评论">
-      <div className="comments-header">
-        <h2>评论</h2>
-        <span>{total}</span>
-      </div>
-      {result.isPending ? (
-        <p className="comments-status" role="status">
-          正在加载评论…
-        </p>
-      ) : result.isError ? (
-        <p className="comments-status error" role="alert">
-          {errorMessage(result.error)}
-        </p>
-      ) : total === 0 ? (
-        <p className="comments-status">还没有评论，来说第一句吧。</p>
-      ) : (
-        <div className="comment-list">
-          {result.data.items.map((thread) => (
-            <div className="comment-thread" key={thread.comment.id}>
-              <CommentRow
-                comment={thread.comment}
-                fresh={thread.comment.id === freshId}
-                onReply={reply}
-              />
-              {thread.replies.length > 0 && (
-                <div className="comment-replies">
-                  {thread.replies.map((comment) => (
-                    <CommentRow
-                      key={comment.id}
-                      comment={comment}
-                      fresh={comment.id === freshId}
-                      onReply={reply}
-                    />
-                  ))}
+    <div className="comments">
+      <div className="comments-scroll">
+        {children}
+        <section className="comments-thread" aria-label="评论">
+          <div className="comments-header">
+            <h2>评论</h2>
+            <span>{total}</span>
+          </div>
+          {result.isPending ? (
+            <p className="comments-status" role="status">
+              正在加载评论…
+            </p>
+          ) : result.isError ? (
+            <p className="comments-status error" role="alert">
+              {errorMessage(result.error)}
+            </p>
+          ) : total === 0 ? (
+            <p className="comments-status">还没有评论，来说第一句吧。</p>
+          ) : (
+            <div className="comment-list">
+              {result.data.items.map((thread) => (
+                <div className="comment-thread" key={thread.comment.id}>
+                  <CommentRow
+                    comment={thread.comment}
+                    fresh={thread.comment.id === freshId}
+                    onReply={reply}
+                  />
+                  {thread.replies.length > 0 && (
+                    <div className="comment-replies">
+                      {thread.replies.map((comment) => (
+                        <CommentRow
+                          key={comment.id}
+                          comment={comment}
+                          fresh={comment.id === freshId}
+                          onReply={reply}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )}
+        </section>
+      </div>
       {user ? (
         <form className="comment-composer" onSubmit={submit}>
           <UserAvatar user={user} className="avatar comment-composer-avatar" />
@@ -178,6 +194,6 @@ export function Comments({ entryId }: { entryId: string }) {
           {error}
         </p>
       )}
-    </section>
+    </div>
   );
 }

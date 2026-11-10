@@ -11,6 +11,7 @@ import {
 import Fastify from 'fastify';
 import { installAuth } from './auth.js';
 import { installComments } from './comments.js';
+import { installCommunity } from './community.js';
 import { installEntries } from './entries.js';
 import { installErrors } from './errors.js';
 import { installMedia } from './media.js';
@@ -48,6 +49,7 @@ export async function buildApp(
     },
   });
   await installAuth(app, { db, config, boss });
+  await installCommunity(app, { db, boss });
   await installEntries(app, { db, boss });
   await installComments(app, { db });
   await installUploads(app, { db, boss, storage, config });

@@ -11,10 +11,19 @@ import { EntryActions } from '../components/EntryActions';
 import { EntryIdentity } from '../components/EntryIdentity';
 import { AttributeBadges } from '../components/MasonryFeed';
 import { UserAvatar } from '../components/UserAvatar';
+import '../components/gallery-content.css';
 
-function dateLine(iso: string) {
-  const date = new Date(iso);
-  return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日 · 公开`;
+const visibilityLabels: Record<Entry['visibility'], string> = {
+  public: '所有人可见',
+  registered: '注册用户可见',
+  followers: '作者的粉丝可见',
+  following: '作者关注的人可见',
+  private: '仅自己可见',
+};
+
+function dateLine(entry: Entry) {
+  const date = new Date(entry.createdAt);
+  return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日 · ${visibilityLabels[entry.visibility]}`;
 }
 
 function fileSize(bytes: number) {
@@ -25,15 +34,13 @@ function fileSize(bytes: number) {
 
 function Creator({ entry }: { entry: Entry }) {
   return (
-    <span className="creator">
+    <Link to={`/users/${encodeURIComponent(entry.author.username)}`} className="creator">
       <UserAvatar user={entry.author} className="avatar avatar-large" />
       <span className="creator-identity">
         <span className="creator-name">{entry.author.displayName}</span>
-        <span className="creator-role">
-          {entry.author.role === 'owner' ? '站点所有者' : '注册用户'}
-        </span>
+        {entry.author.bio && <span className="creator-role">{entry.author.bio}</span>}
       </span>
-    </span>
+    </Link>
   );
 }
 
@@ -53,7 +60,7 @@ function TagList({ entry }: { entry: Entry }) {
 function Metadata({ entry }: { entry: Entry }) {
   return (
     <div className="entry-metadata">
-      <span className="entry-date">{dateLine(entry.createdAt)}</span>
+      <span className="entry-date">{dateLine(entry)}</span>
       <EntryIdentity id={entry.id} />
     </div>
   );
@@ -160,12 +167,18 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [selection, setSelection] = useState<{ id: string; index: number } | null>(null);
+  const [consentedEntry, setConsentedEntry] = useState<string | null>(null);
   const result = useQuery({
     queryKey: ['entries', 'detail', user?.id ?? 'guest', id],
     queryFn: ({ signal }) => request<Entry>(`/api/v1/entries/${id}`, { signal }),
   });
   const entry = result.data;
+  const needsConsent = Boolean(entry?.declarations.nsfw && consentedEntry !== entry.id);
   const close = () => {
+    if (needsConsent) {
+      navigate('/', { replace: true });
+      return;
+    }
     if (modal) navigate(-1);
     else navigate('/');
   };
@@ -207,6 +220,30 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
         )}
       </section>
     );
+  } else if (needsConsent) {
+    content = (
+      <section className="detail-status nsfw-consent" aria-labelledby="nsfw-consent-title">
+        <div className="detail-header">
+          <Creator entry={entry} />
+          {closeButton}
+        </div>
+        <AttributeBadges entry={entry} />
+        <h1 id="nsfw-consent-title">此条目包含 NSFW 内容</h1>
+        <p>内容可能不适合在公共场合查看。确认后才会展示图片、正文和附件。</p>
+        <div className="dialog-actions">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => navigate('/', { replace: true })}
+          >
+            返回主页
+          </button>
+          <button type="button" className="primary" onClick={() => setConsentedEntry(entry.id)}>
+            确认查看
+          </button>
+        </div>
+      </section>
+    );
   } else if (mobile) {
     content = (
       <article className="detail-page">
@@ -215,22 +252,23 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
           {closeButton}
         </div>
         <Metadata entry={entry} />
-        <div className="detail-scroll">
-          {entry.images.length > 0 && (
-            <>
-              <div className="mobile-gallery">
-                <Gallery entry={entry} selected={selected} onSelect={selectImage} />
-              </div>
-              {entry.title && <h1>{entry.title}</h1>}
-            </>
-          )}
-          {entry.images.length === 0 && entry.title && <h1>{entry.title}</h1>}
-          {entry.images.length === 0 && <AttributeBadges entry={entry} />}
-          {entry.body && <div className="detail-body">{entry.body}</div>}
-          <TagList entry={entry} />
-          <Attachments entry={entry} />
-          <Comments entryId={entry.id} />
-        </div>
+        <Comments key={entry.id} entryId={entry.id}>
+          <div className="detail-scroll">
+            {entry.images.length > 0 && (
+              <>
+                <div className="mobile-gallery">
+                  <Gallery entry={entry} selected={selected} onSelect={selectImage} />
+                </div>
+                {entry.title && <h1>{entry.title}</h1>}
+              </>
+            )}
+            {entry.images.length === 0 && entry.title && <h1>{entry.title}</h1>}
+            {entry.images.length === 0 && <AttributeBadges entry={entry} />}
+            {entry.body && <div className="detail-body">{entry.body}</div>}
+            <TagList entry={entry} />
+            <Attachments entry={entry} />
+          </div>
+        </Comments>
         <EntryActions
           entry={entry}
           onDelete={() => setDeleting(entry)}
@@ -244,20 +282,21 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
       <article className="detail-layout image-detail">
         <Gallery entry={entry} selected={selected} onSelect={selectImage} />
         <section className="detail-information">
-          <div className="detail-top">
-            <div className="detail-header image-header">{closeButton}</div>
-            <div className="detail-artwork">
-              <EntryIdentity id={entry.id} />
-              {entry.title && <h1>{entry.title}</h1>}
-              <span className="entry-date">{dateLine(entry.createdAt)}</span>
-              {entry.body && <div className="detail-body image-body">{entry.body}</div>}
-              <TagList entry={entry} />
+          <Comments key={entry.id} entryId={entry.id}>
+            <div className="detail-top">
+              <div className="detail-header image-header">{closeButton}</div>
+              <div className="detail-artwork">
+                <EntryIdentity id={entry.id} />
+                {entry.title && <h1>{entry.title}</h1>}
+                <span className="entry-date">{dateLine(entry)}</span>
+                {entry.body && <div className="detail-body image-body">{entry.body}</div>}
+                <TagList entry={entry} />
+              </div>
+              <Creator entry={entry} />
+              <div className="detail-divider" />
+              <Attachments entry={entry} />
             </div>
-            <Creator entry={entry} />
-            <div className="detail-divider" />
-            <Attachments entry={entry} />
-          </div>
-          <Comments entryId={entry.id} />
+          </Comments>
           <EntryActions entry={entry} onDelete={() => setDeleting(entry)} variant="image" />
         </section>
       </article>
@@ -271,13 +310,14 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
         </div>
         <Metadata entry={entry} />
         <AttributeBadges entry={entry} />
-        <div className="detail-scroll">
-          {entry.title && <h1>{entry.title}</h1>}
-          {entry.body && <div className="detail-body">{entry.body}</div>}
-          <TagList entry={entry} />
-          <Attachments entry={entry} />
-          <Comments entryId={entry.id} />
-        </div>
+        <Comments key={entry.id} entryId={entry.id}>
+          <div className="detail-scroll">
+            {entry.title && <h1>{entry.title}</h1>}
+            {entry.body && <div className="detail-body">{entry.body}</div>}
+            <TagList entry={entry} />
+            <Attachments entry={entry} />
+          </div>
+        </Comments>
         <EntryActions entry={entry} onDelete={() => setDeleting(entry)} variant="text" />
       </article>
     );
@@ -289,7 +329,7 @@ export function EntryDetail({ modal = false }: { modal?: boolean }) {
       ref={dialog}
       className={[
         'entry-dialog',
-        entry?.images.length ? 'artwork-dialog' : '',
+        entry?.images.length && !needsConsent ? 'artwork-dialog' : '',
         mobile ? 'mobile-detail' : '',
       ]
         .filter(Boolean)

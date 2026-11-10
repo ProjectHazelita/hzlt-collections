@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { fromDrizzle, type PgBoss } from 'pg-boss';
 import { Value } from 'typebox/value';
 import {
@@ -10,9 +10,11 @@ import {
   type UploadKind,
   type UploadStatus,
 } from '@hcl/contracts';
+import type { User } from '@hcl/contracts';
+import { visibleEntries } from '../entries/access.js';
 import type { Database } from '../index.js';
 import type { LocalStorage } from '../storage/local-storage.js';
-import { assets, entries, entryAttachments, users } from '../db/schema.js';
+import { assets, entries, entryAttachments, siteSettings, users } from '../db/schema.js';
 import { DomainError } from '../errors.js';
 import { withIdempotency } from '../idempotency.js';
 
@@ -97,7 +99,7 @@ export class AssetService {
   }
 
   /** Resolve an asset only while it is ready and attached to a published entry. */
-  async published(id: string) {
+  async published(id: string, user: User | null = null) {
     const [asset] = await this.db
       .select({
         entryId: entries.id,
@@ -117,7 +119,7 @@ export class AssetService {
         and(
           eq(assets.id, id),
           eq(assets.state, 'ready'),
-          isNull(entries.deletedAt),
+          visibleEntries(user),
           ne(entryAttachments.kind, 'link'),
         ),
       )
@@ -144,6 +146,18 @@ export class AssetService {
     const thumbnailKey = asset?.thumbnailKey;
     if (!thumbnailKey) throw new DomainError(404, 'NOT_FOUND', 'Avatar not found.');
     return { thumbnailKey };
+  }
+
+  /** Only the processed thumbnail of the saved site logo is public. */
+  async siteLogo(id: string) {
+    const [asset] = await this.db
+      .select({ thumbnailKey: assets.thumbnailKey })
+      .from(assets)
+      .innerJoin(siteSettings, eq(siteSettings.logoAssetId, assets.id))
+      .where(and(eq(assets.id, id), eq(assets.state, 'ready'), eq(assets.kind, 'image')))
+      .limit(1);
+    if (!asset?.thumbnailKey) throw new DomainError(404, 'NOT_FOUND', 'Site logo not found.');
+    return { thumbnailKey: asset.thumbnailKey };
   }
 
   async get(id: string, userId: string): Promise<UploadStatus> {

@@ -17,7 +17,8 @@ export function SettingsLayout() {
           {user?.role === 'owner' && (
             <>
               <p className="settings-nav-group">站点</p>
-              <NavLink to="/settings/content">站点管理</NavLink>
+              <NavLink to="/settings/site">站点设置</NavLink>
+              <NavLink to="/settings/content">内容管理</NavLink>
             </>
           )}
         </nav>

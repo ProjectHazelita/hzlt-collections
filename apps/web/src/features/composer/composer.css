@@ -115,6 +115,7 @@
   font-weight: 400;
 }
 .composer-field > input,
+.composer-field > select,
 .composer-field > textarea {
   width: 100%;
   border: 0;
@@ -127,6 +128,7 @@
     box-shadow 160ms ease,
     background-color 160ms ease;
 }
+.composer-field > select,
 .composer-field > input {
   height: 44px;
 }
@@ -141,6 +143,7 @@
   color: var(--text-secondary);
 }
 .composer-field > input:focus-visible,
+.composer-field > select:focus-visible,
 .composer-field > textarea:focus-visible {
   outline: 2px solid var(--action-primary);
   outline-offset: 0;

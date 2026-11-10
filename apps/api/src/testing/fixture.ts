@@ -70,6 +70,7 @@ export async function createFixture(environment: Record<string, string> = {}) {
       await db.execute(
         sql`truncate table comments, entry_attachments, entry_tags, likes, entries, assets, tags, idempotency_keys, sessions, users restart identity cascade`,
       );
+      await db.execute(sql`insert into site_settings (id) values (1)`);
     },
     async close() {
       releaseLateSave();

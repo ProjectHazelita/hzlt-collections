@@ -1,0 +1,58 @@
+.site-logo-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.site-logo-preview img {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--bg-subtle);
+}
+.site-logo-preview .settings-avatar-actions {
+  flex: 1;
+  min-width: 200px;
+}
+.site-logo-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.site-logo-status progress {
+  width: 96px;
+  height: 6px;
+  accent-color: var(--action-primary);
+}
+.site-logo-alternate {
+  font-size: 13px;
+}
+.site-logo-alternate summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.site-logo-alternate[open] summary {
+  margin-bottom: 12px;
+}
+.site-registration-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.site-registration-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--action-primary);
+}
+.settings-field textarea {
+  border: 0;
+  background: var(--bg-subtle);
+}

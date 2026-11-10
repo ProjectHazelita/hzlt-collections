@@ -55,7 +55,7 @@ export async function installMedia(
           },
         },
         async (request, reply) => {
-          const asset = await assets.published(request.params.assetId);
+          const asset = await assets.published(request.params.assetId, request.currentUser);
           if (asset.kind === 'file' && kind !== 'download')
             throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
           if (asset.kind === 'image' && kind === 'thumbnail' && !asset.thumbnailKey)
@@ -91,35 +91,39 @@ export async function installMedia(
         },
       );
     }
-    routes.get(
-      '/media/:assetId/avatar',
-      {
-        schema: {
-          params: MediaParamsSchema,
-          response: {
-            200: Type.Unsafe<ReadStream>({ type: 'string', format: 'binary' }),
-            '4xx': ErrorResponseSchema,
-            '5xx': ErrorResponseSchema,
+    for (const kind of ['avatar', 'site-logo'] as const) {
+      routes.get(
+        `/media/:assetId/${kind}`,
+        {
+          schema: {
+            params: MediaParamsSchema,
+            response: {
+              200: Type.Unsafe<ReadStream>({ type: 'string', format: 'binary' }),
+              '4xx': ErrorResponseSchema,
+              '5xx': ErrorResponseSchema,
+            },
           },
         },
-      },
-      async (request, reply) => {
-        const asset = await assets.avatar(request.params.assetId);
-        const stream = storage.read(asset.thumbnailKey);
-        try {
-          await once(stream, 'open');
-        } catch (error) {
-          stream.destroy();
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            throw new DomainError(404, 'NOT_FOUND', 'Avatar not found.');
+        async (request, reply) => {
+          const asset = await (kind === 'avatar'
+            ? assets.avatar(request.params.assetId)
+            : assets.siteLogo(request.params.assetId));
+          const stream = storage.read(asset.thumbnailKey);
+          try {
+            await once(stream, 'open');
+          } catch (error) {
+            stream.destroy();
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+              throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
+            }
+            throw error;
           }
-          throw error;
-        }
-        reply.type('image/webp');
-        reply.header('Content-Disposition', 'inline; filename="avatar.webp"');
-        return reply.send(stream);
-      },
-    );
+          reply.type('image/webp');
+          reply.header('Content-Disposition', `inline; filename="${kind}.webp"`);
+          return reply.send(stream);
+        },
+      );
+    }
   };
   await app.register(plugin);
 }

@@ -4,6 +4,7 @@ import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from
 import { Link, useLocation } from 'react-router';
 import { copyText } from '../app/clipboard';
 import { UserAvatar } from './UserAvatar';
+import './gallery-content.css';
 
 export function AttributeBadges({
   entry,
@@ -30,10 +31,13 @@ export function AttributeBadges({
 
 export function Author({ entry, detail = false }: { entry: Entry; detail?: boolean }) {
   return (
-    <span className={detail ? 'author author-detail' : 'author'}>
+    <Link
+      to={`/users/${encodeURIComponent(entry.author.username)}`}
+      className={detail ? 'author author-detail' : 'author'}
+    >
       <UserAvatar user={entry.author} />
       <span>{entry.author.displayName}</span>
-    </span>
+    </Link>
   );
 }
 
@@ -110,6 +114,28 @@ function CardMenu({ entry }: { entry: Entry }) {
   );
 }
 
+function AttachmentSummary({ entry }: { entry: Entry }) {
+  if (!entry.files.length && !entry.links.length) return null;
+  return (
+    <div className="card-attachment-summary">
+      {entry.files.length > 0 && (
+        <span>
+          <FileText size={14} />
+          <span>{entry.files[0].name}</span>
+          <small>文件 · {entry.files.length}</small>
+        </span>
+      )}
+      {entry.links.length > 0 && (
+        <span>
+          <Link2 size={14} />
+          <span>{entry.links[0].host}</span>
+          <small>链接 · {entry.links.length}</small>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function EntryCard({
   entry,
   onMeasure,
@@ -163,7 +189,10 @@ function EntryCard({
   const tall = image ? image.height / image.width > 2.5 : false;
   const title = entry.title;
   return (
-    <article ref={card} className="entry-card">
+    <article
+      ref={card}
+      className={entry.declarations.nsfw ? 'entry-card sensitive-card' : 'entry-card'}
+    >
       <Link
         className="card-main"
         to={`/entries/${entry.id}`}
@@ -171,39 +200,33 @@ function EntryCard({
         aria-label={title ?? (entry.body.slice(0, 60) || `查看条目 #${entry.id}`)}
       >
         {image ? (
-          <div className={tall ? 'card-image long-image' : 'card-image'}>
-            <img
-              src={image.thumbnailUrl}
-              alt={title ?? ''}
-              width={image.width}
-              height={image.height}
-              loading="lazy"
-            />
-            <AttributeBadges entry={entry} overlay longImage={tall} count={entry.images.length} />
-            <div className="card-overlay">
-              <span className="card-overlay-title">
-                {title || entry.body.split('\n', 1)[0] || `条目 #${entry.id}`}
-              </span>
+          <>
+            <div className={tall ? 'card-image long-image' : 'card-image'}>
+              <img
+                src={image.thumbnailUrl}
+                alt={title ?? ''}
+                width={image.width}
+                height={image.height}
+                loading="lazy"
+              />
+              <AttributeBadges entry={entry} overlay longImage={tall} count={entry.images.length} />
+              <div className="card-overlay">
+                <span className="card-overlay-title">
+                  {title || entry.body.split('\n', 1)[0] || `条目 #${entry.id}`}
+                </span>
+              </div>
             </div>
-          </div>
+            <AttachmentSummary entry={entry} />
+          </>
         ) : entry.files.length || entry.links.length ? (
           <div className="text-card-content attachment-card">
-            <div className="card-attachment-kinds">
-              {entry.files.length > 0 && (
-                <span>
-                  <FileText size={14} /> 文件 · {entry.files.length}
-                </span>
-              )}
-              {entry.links.length > 0 && (
-                <span>
-                  <Link2 size={14} /> 链接 · {entry.links.length}
-                </span>
-              )}
+            <div className="attachment-preview">
+              <AttachmentSummary entry={entry} />
+              {title && <h2>{title}</h2>}
+              <p className="text-card-body">
+                {entry.body || entry.files[0]?.name || entry.links[0]?.host || ''}
+              </p>
             </div>
-            {title && <h2>{title}</h2>}
-            <p className="text-card-body">
-              {entry.body || entry.files[0]?.name || entry.links[0]?.host || ''}
-            </p>
             <AttributeBadges entry={entry} />
           </div>
         ) : (

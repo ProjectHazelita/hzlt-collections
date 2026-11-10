@@ -9,7 +9,7 @@ import type {
 } from '@hcl/contracts';
 import { ArrowLeft, FileText, Link2, Plus, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Link, type Location, useLocation, useNavigate, useParams } from 'react-router';
+import { Link, type Location, useBlocker, useLocation, useNavigate, useParams } from 'react-router';
 import { ApiError, errorMessage, isCancelled, queryClient, useAuth } from '../../app/api';
 import { uuid } from '../../app/uuid';
 import './composer.css';
@@ -18,6 +18,13 @@ const MAX_IMAGES = 20;
 const MAX_FILES = 5;
 const MAX_LINKS = 5;
 
+const visibilityLabels = {
+  public: '所有人',
+  registered: '注册用户',
+  followers: '我的粉丝',
+  following: '我关注的用户',
+  private: '仅自己',
+} as const;
 const length = (value: string) => Array.from(value).length;
 const tagKey = (value: string) => value.trim().normalize('NFKC').toLowerCase();
 const imageErrors: Record<string, string> = {
@@ -258,6 +265,9 @@ function ComposerForm({ id }: { id: string | undefined }) {
   const [tags, setTags] = useState<string[]>([]);
   const [nsfw, setNsfw] = useState(false);
   const [aiGenerated, setAiGenerated] = useState(false);
+  const [visibility, setVisibility] = useState<Entry['visibility']>('public');
+  const [dirty, setDirty] = useState(false);
+  const savedNavigation = useRef(false);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [links, setLinks] = useState<LinkItem[]>([]);
@@ -275,6 +285,35 @@ function ComposerForm({ id }: { id: string | undefined }) {
   const submitIdentity = useRef<{ signature: string; key: string } | null>(null);
   const savingRef = useRef(false);
   const mounted = useRef(true);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty &&
+      !loading &&
+      !savedNavigation.current &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search ||
+        currentLocation.hash !== nextLocation.hash ||
+        currentLocation.key !== nextLocation.key),
+  );
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    if (window.confirm('有尚未保存的修改。离开并放弃修改吗？选择“取消”可继续编辑。')) {
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
+  useEffect(() => {
+    if (!dirty || loading) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (savedNavigation.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [dirty, loading]);
 
   useEffect(() => {
     mounted.current = true;
@@ -302,6 +341,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
         setTags(next.tags);
         setNsfw(next.declarations.nsfw);
         setAiGenerated(next.declarations.aiGenerated);
+        setVisibility(next.visibility);
         setImages(
           next.images.map((image) => ({
             key: image.id,
@@ -418,6 +458,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
   }
 
   function changed() {
+    setDirty(true);
     submitIdentity.current = null;
     setSubmitError('');
     setFields({});
@@ -553,6 +594,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
       links: filledLinks.map((link) => ({ url: link.url.trim() })),
       tags,
       declarations: { nsfw, aiGenerated },
+      visibility,
     };
     const input: EntryInput = { ...content, body, tags, declarations: { nsfw, aiGenerated } };
     const signature = JSON.stringify(input);
@@ -572,6 +614,8 @@ function ComposerForm({ id }: { id: string | undefined }) {
       if (!current()) return;
       await queryClient.invalidateQueries();
       if (!current()) return;
+      savedNavigation.current = true;
+      setDirty(false);
       const home: Location = { pathname: '/', search: '', hash: '', state: null, key: 'home' };
       if (id && location.key !== 'default') {
         // Editing returns to the view that opened the editor, usually the entry modal over its feed.
@@ -620,15 +664,18 @@ function ComposerForm({ id }: { id: string | undefined }) {
       </section>
     );
 
-  const typeLabel = images.length
-    ? '图片条目'
-    : files.length && filledLinks.length
-      ? '文件与链接条目'
-      : files.length
-        ? '文件条目'
-        : filledLinks.length
-          ? '链接条目'
-          : '文字条目';
+  const categoryCount =
+    Number(images.length > 0) + Number(files.length > 0) + Number(filledLinks.length > 0);
+  const typeLabel =
+    categoryCount > 1
+      ? '混合条目'
+      : images.length
+        ? '图片条目'
+        : files.length
+          ? '文件条目'
+          : filledLinks.length
+            ? '链接条目'
+            : '文字条目';
 
   return (
     <section className="composer-page">
@@ -910,7 +957,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
                     }}
                   />
                 </label>
-                <small className="composer-hint">将以链接条目发布，正文可补充介绍。</small>
+                <small className="composer-hint">链接将随条目一同发布，正文可补充介绍。</small>
                 {item.url.trim() && !linkValid(item.url) && (
                   <small className="error" role="alert">
                     请输入有效的 http 或 https 链接。
@@ -944,6 +991,26 @@ function ComposerForm({ id }: { id: string | undefined }) {
           </section>
           <fieldset className="composer-panel" disabled={saving}>
             <legend className="composer-sr-only">条目设置</legend>
+            <div className="composer-field">
+              <label className="composer-label" htmlFor="composer-visibility">
+                可见范围
+              </label>
+              <select
+                id="composer-visibility"
+                value={visibility}
+                onChange={(event) => {
+                  changed();
+                  setVisibility(event.target.value as Entry['visibility']);
+                }}
+              >
+                {Object.entries(visibilityLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <small className="composer-hint">“我的粉丝”和“我关注的用户”是不同的受众。</small>
+            </div>
             <TagInput
               tags={tags}
               disabled={saving}
@@ -991,7 +1058,7 @@ function ComposerForm({ id }: { id: string | undefined }) {
             <p className="composer-hint">填写正文或添加图片、文件、链接后，即可发布。</p>
             <div className="composer-summary">
               <span>{typeLabel}</span>
-              <span>公开发布</span>
+              <span>{visibilityLabels[visibility]}</span>
             </div>
           </fieldset>
         </div>
