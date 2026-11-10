@@ -20,7 +20,7 @@
     "drizzle-kit": "0.31.11",
     "@types/pg": "8"
   },
-  "version": "0.1.0-dev.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module"
 }
