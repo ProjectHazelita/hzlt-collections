@@ -1,0 +1,37 @@
+{
+  "name": "hzlt-collections",
+  "scripts": {
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "setup:env": "node scripts/init-env.mjs",
+    "dev": "docker compose -f compose.dev.yaml up --build -d",
+    "db:migrate": "docker compose -f compose.dev.yaml run --rm migrate",
+    "typecheck": "docker compose -f compose.dev.yaml --profile tools run --rm tools pnpm typecheck:packages",
+    "build": "docker compose -f compose.dev.yaml --profile tools run --rm tools pnpm build:packages",
+    "test:integration": "docker compose -f compose.dev.yaml --profile tools run --rm tools pnpm test:integration:internal",
+    "smoke:api": "docker compose -f compose.dev.yaml --profile tools run --rm tools pnpm smoke:api:internal",
+    "typecheck:packages": "pnpm -r typecheck",
+    "build:packages": "pnpm --filter @hcl/web build && pnpm --filter @hcl/api build && pnpm --filter @hcl/worker build",
+    "test:integration:internal": "vitest run --fileParallelism=false",
+    "smoke:api:internal": "tsx scripts/smoke-api.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@types/node": "24",
+    "bumpp": "12.3.0",
+    "tsup": "9.0.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  },
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.9.0",
+  "engines": {
+    "node": ">=24.21.0 <25"
+  }
+}

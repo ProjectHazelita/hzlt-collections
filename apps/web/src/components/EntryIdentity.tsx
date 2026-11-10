@@ -1,0 +1,45 @@
+import { Check, Copy } from 'lucide-react';
+import { useState } from 'react';
+import { copyText } from '../app/clipboard';
+
+export function EntryIdentity({
+  id,
+  variant = 'detail',
+}: {
+  id: string;
+  variant?: 'card' | 'detail';
+}) {
+  const [copied, setCopied] = useState(false);
+  const [fallback, setFallback] = useState(false);
+  const url = new URL(`/entries/${id}`, location.origin).href;
+  async function copy() {
+    const success = await copyText(url);
+    setFallback(!success);
+    setCopied(success);
+    if (success) window.setTimeout(() => setCopied(false), 2000);
+  }
+  const card = variant === 'card';
+  return (
+    <span className={card ? 'entry-identity entry-identity-card' : 'entry-identity'}>
+      {!card && <span className="entry-number">#{id}</span>}
+      <button
+        type="button"
+        className="entry-copy"
+        aria-label={copied ? '链接已复制' : '复制条目链接'}
+        title="复制条目链接"
+        onClick={() => void copy()}
+      >
+        {copied ? <Check size={card ? 20 : 14} /> : <Copy size={card ? 20 : 14} />}
+        {!card && <span>{copied ? '链接已复制' : '复制条目链接'}</span>}
+      </button>
+      {fallback && (
+        <input
+          aria-label="条目链接，复制失败请手动复制"
+          readOnly
+          value={url}
+          onFocus={(event) => event.target.select()}
+        />
+      )}
+    </span>
+  );
+}

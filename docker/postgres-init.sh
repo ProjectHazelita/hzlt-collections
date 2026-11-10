@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+: "${HCL_DB_PASSWORD:?HCL_DB_PASSWORD must be set}"
+
+psql --username "$POSTGRES_USER" --dbname postgres --set=ON_ERROR_STOP=1 \
+  --set=app_password="$HCL_DB_PASSWORD" <<'SQL'
+CREATE ROLE hcl LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD :'app_password';
+CREATE DATABASE hcl OWNER hcl;
+CREATE DATABASE hcl_test OWNER hcl;
+REVOKE ALL ON DATABASE hcl FROM PUBLIC;
+REVOKE ALL ON DATABASE hcl_test FROM PUBLIC;
+SQL

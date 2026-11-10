@@ -1,0 +1,26 @@
+{
+  "name": "@hcl/server",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./media": "./src/assets/media.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@hcl/contracts": "workspace:*",
+    "typebox": "1.4.5",
+    "pg": "8.23.1",
+    "drizzle-orm": "0.45.4",
+    "pg-boss": "12.38.1",
+    "argon2": "0.45.2"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11",
+    "@types/pg": "8"
+  },
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "type": "module"
+}

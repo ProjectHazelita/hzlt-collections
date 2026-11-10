@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794042652524,
+      "tag": "0000_wild_carnage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794233179829,
+      "tag": "0001_attachments_and_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794235328314,
+      "tag": "0002_user_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794276000000,
+      "tag": "0003_profiles_visibility_site",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794280000000,
+      "tag": "0004_site_logo",
+      "breakpoints": true
+    }
+  ]
+}

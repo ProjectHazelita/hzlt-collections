@@ -1,0 +1,367 @@
+.settings-page {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.settings-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-heading h1 {
+  font-size: 28px;
+  line-height: 40px;
+  font-weight: 600;
+}
+.settings-heading p {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--text-secondary);
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  min-width: 0;
+}
+.settings-nav {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--bg-subtle);
+}
+.settings-nav-group {
+  margin: 0;
+  padding: 10px 10px 4px;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.settings-nav-group:first-child {
+  padding-top: 2px;
+}
+.settings-nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-primary);
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
+}
+.settings-nav a:hover {
+  background: var(--bg-page);
+}
+.settings-nav a.active {
+  background: var(--bg-page);
+  font-weight: 500;
+  box-shadow: 0 1px 3px #4c4f6914;
+}
+.settings-nav a.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--action-primary);
+}
+.settings-content {
+  min-width: 0;
+}
+.settings-content .content-management {
+  padding: 0;
+}
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 760px;
+}
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--bg-page);
+}
+.settings-section-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-section-heading h2 {
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.settings-section-heading p {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+.settings-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.settings-avatar {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--accent);
+  color: var(--action-primary);
+  font-size: 32px;
+  font-weight: 600;
+}
+.settings-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.settings-avatar-progress {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 3px 4px;
+  background: rgb(76 79 105 / 78%);
+  color: #fff;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  font-weight: 400;
+}
+.settings-avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.settings-avatar-title {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.settings-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.settings-small-button {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.settings-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-secondary);
+  transition: background-color 140ms ease;
+}
+.settings-text-button:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+.settings-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.settings-label {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.settings-field input {
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 22px;
+}
+.settings-readonly {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+.settings-hint {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+.settings-success {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--feedback-success);
+}
+.settings-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-card-footer button {
+  height: 40px;
+}
+
+.settings-field textarea,
+.settings-field select {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+.settings-field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.settings-social {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+.settings-social legend {
+  padding: 0 4px;
+}
+.settings-social-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.settings-social-row input {
+  width: 100%;
+  min-width: 0;
+}
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 22px;
+}
+.settings-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--action-primary);
+}
+@media (max-width: 540px) {
+  .settings-social-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .settings-social-row .settings-field:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  .settings-page {
+    padding: 0 0 24px;
+    gap: 16px;
+  }
+  .settings-heading h1 {
+    font-size: 24px;
+    line-height: 36px;
+  }
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 6px;
+  }
+  .settings-nav-group {
+    display: none;
+  }
+  .settings-nav a {
+    white-space: nowrap;
+    padding: 0 12px;
+  }
+  .settings-nav a.active::before {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 3px;
+    width: auto;
+    height: 2px;
+  }
+  .settings-stack {
+    max-width: none;
+  }
+  .settings-card {
+    padding: 16px;
+  }
+  .settings-avatar-row {
+    align-items: flex-start;
+  }
+  .settings-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    font-size: 26px;
+  }
+  .settings-card-footer button {
+    width: 100%;
+  }
+}
