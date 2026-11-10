@@ -69,6 +69,33 @@ export function FeedPage({ kind = 'home' }: { kind?: 'home' | 'likes' | 'search'
     <MasonryFeed entries={items} />
   );
 
+  const pagination = !result.isPending && items.length > 0 && (
+    <div className="feed-footer">
+      {result.hasNextPage ? (
+        <button
+          type="button"
+          className="secondary"
+          disabled={result.isFetchingNextPage}
+          onClick={() => void result.fetchNextPage()}
+        >
+          {result.isFetchingNextPage
+            ? '加载中…'
+            : result.isFetchNextPageError
+              ? '加载失败，点击重试'
+              : '加载更多'}
+        </button>
+      ) : (
+        <p>
+          {kind === 'likes'
+            ? '已展示全部喜欢'
+            : kind === 'search'
+              ? '已展示全部结果'
+              : '已展示全部内容'}
+        </p>
+      )}
+    </div>
+  );
+
   if (kind === 'home') {
     return (
       <>
@@ -84,6 +111,7 @@ export function FeedPage({ kind = 'home' }: { kind?: 'home' | 'likes' | 'search'
           </header>
         )}
         {feed}
+        {pagination}
       </>
     );
   }
@@ -97,22 +125,7 @@ export function FeedPage({ kind = 'home' }: { kind?: 'home' | 'likes' | 'search'
         )}
       </header>
       {feed}
-      {!result.isPending && !result.isError && items.length > 0 && (
-        <div className="feed-footer">
-          {result.hasNextPage ? (
-            <button
-              type="button"
-              className="secondary"
-              disabled={result.isFetchingNextPage}
-              onClick={() => void result.fetchNextPage()}
-            >
-              {result.isFetchingNextPage ? '加载中…' : '加载更多'}
-            </button>
-          ) : (
-            <p>{kind === 'likes' ? '已展示全部喜欢' : '已展示全部结果'}</p>
-          )}
-        </div>
-      )}
+      {pagination}
     </section>
   );
 }
