@@ -192,6 +192,51 @@
 .user-list-bio {
   white-space: pre-wrap;
 }
+.user-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.user-comment {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--bg-page);
+}
+.user-comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.user-comment-meta a,
+.user-comment-entry {
+  color: var(--action-primary);
+}
+.user-comment-meta a:hover,
+.user-comment-entry:hover {
+  text-decoration: underline;
+}
+.user-comment-body {
+  margin: 12px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 24px;
+}
+.user-comment-entry {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 20px;
+}
 @media (max-width: 767px) {
   .user-page {
     padding: 20px 16px;

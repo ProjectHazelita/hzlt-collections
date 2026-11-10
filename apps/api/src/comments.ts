@@ -6,12 +6,17 @@ import {
   CommentInputSchema,
   CommentListSchema,
   CommentSchema,
+  EntryCommentParamsSchema,
   EntryCommentsParamsSchema,
   ErrorResponseSchema,
+  PaginationQuerySchema,
   UnsafeRequestHeadersSchema,
+  UserCommentListSchema,
+  UsernameParamsSchema,
 } from '@hcl/contracts';
 import { CommentService, type Database } from '@hcl/server';
 import type { FastifyInstance } from 'fastify';
+import { Type } from 'typebox';
 
 export async function installComments(
   app: FastifyInstance,
@@ -34,6 +39,34 @@ export async function installComments(
         },
       },
       async (request) => comments.list(request.params.id, request.currentUser),
+    );
+
+    routes.get(
+      '/api/v1/users/:username/comments',
+      {
+        schema: {
+          params: UsernameParamsSchema,
+          querystring: PaginationQuerySchema,
+          response: { 200: UserCommentListSchema, ...errors },
+        },
+      },
+      async (request) =>
+        comments.listUser(request.params.username, request.query, request.currentUser),
+    );
+
+    routes.delete(
+      '/api/v1/entries/:id/comments/:commentId',
+      {
+        schema: {
+          params: EntryCommentParamsSchema,
+          headers: UnsafeRequestHeadersSchema,
+          response: { 204: Type.Null(), ...errors },
+        },
+      },
+      async (request, reply) => {
+        await comments.delete(request.params.id, request.params.commentId, request.requireUser());
+        return reply.code(204).send(null);
+      },
     );
 
     routes.post(
