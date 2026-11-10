@@ -15,6 +15,8 @@ import { installCommunity } from './community.js';
 import { installEntries } from './entries.js';
 import { installErrors } from './errors.js';
 import { installMedia } from './media.js';
+import { moderationRoutes } from './moderation.js';
+import { installStaff } from './staff.js';
 import { installUploads } from './uploads.js';
 import { installWeb } from './web.js';
 
@@ -50,6 +52,8 @@ export async function buildApp(
   });
   await installAuth(app, { db, config, boss });
   await installCommunity(app, { db, boss });
+  await installStaff(app, { db, boss });
+  await moderationRoutes(app, { db, boss, storage });
   await installEntries(app, { db, boss });
   await installComments(app, { db });
   await installUploads(app, { db, boss, storage, config });

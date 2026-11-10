@@ -1,4 +1,5 @@
 import { type Static, Type } from 'typebox';
+import { ProfileFieldSchema } from './permissions.js';
 import { UserSchema, UuidSchema } from './primitives.js';
 
 export const PronounsSchema = Type.Union([
@@ -36,6 +37,7 @@ export const ProfileSchema = Type.Object(
     displayName: Type.String({ maxLength: 32 }),
     avatarAssetId: Type.Union([UuidSchema, Type.Null()]),
     ...profileFields,
+    hiddenFields: Type.Array(ProfileFieldSchema),
   },
   { additionalProperties: false },
 );

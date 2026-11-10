@@ -1,3 +1,4 @@
+import type { EntryModeration, Permission, ProfileField } from '@hcl/contracts';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -42,6 +43,14 @@ export const users = pgTable(
     showFollowers: boolean('show_followers').notNull().default(true),
     passwordHash: text('password_hash').notNull(),
     role: text('role').$type<'owner' | 'member'>().notNull(),
+    isAdmin: boolean('is_admin').notNull().default(false),
+    isModerator: boolean('is_moderator').notNull().default(false),
+    banned: boolean('banned').notNull().default(false),
+    banReason: text('ban_reason'),
+    hiddenProfileFields: jsonb('hidden_profile_fields')
+      .$type<ProfileField[]>()
+      .notNull()
+      .default([]),
     createdAt: time('created_at').notNull().defaultNow(),
   },
   (t) => [
@@ -112,6 +121,18 @@ export const entries = pgTable(
     createdAt: time('created_at').notNull().defaultNow(),
     updatedAt: time('updated_at').notNull().defaultNow(),
     deletedAt: time('deleted_at'),
+    moderation: jsonb('moderation')
+      .$type<EntryModeration>()
+      .notNull()
+      .default({
+        hidden: false,
+        titleHidden: false,
+        bodyHidden: false,
+        hiddenImageIds: [],
+        hiddenFileIds: [],
+        hiddenLinkUrls: [],
+        reason: null,
+      }),
   },
   (t) => [
     check(
@@ -242,3 +263,37 @@ export const siteSettings = pgTable(
   },
   (t) => [check('site_singleton', sql`${t.id} = 1`)],
 );
+
+export const staffGrants = pgTable(
+  'staff_grants',
+  {
+    id: integer('id').primaryKey().default(1),
+    admin: jsonb('admin')
+      .$type<Permission[]>()
+      .notNull()
+      .default([
+        'site.brand',
+        'site.registration',
+        'users.manage',
+        'users.ban',
+        'users.profile',
+        'audit.read',
+      ]),
+    moderator: jsonb('moderator')
+      .$type<Permission[]>()
+      .notNull()
+      .default(['content.moderate', 'content.delete', 'audit.read']),
+  },
+  (t) => [check('staff_grants_singleton', sql`${t.id} = 1`)],
+);
+export const auditRecords = pgTable('audit_records', {
+  id: bigint('id', { mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+  actorId: uuid('actor_id')
+    .notNull()
+    .references(() => users.id),
+  action: text('action').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  reason: text('reason').notNull(),
+  createdAt: time('created_at').notNull().defaultNow(),
+});

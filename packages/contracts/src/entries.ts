@@ -90,6 +90,37 @@ export type TagName = Static<typeof TagNameSchema>;
 export const TagNamesSchema = Type.Array(TagNameSchema, { maxItems: 10 });
 export type TagNames = Static<typeof TagNamesSchema>;
 
+export const EntryModerationSchema = Type.Object(
+  {
+    hidden: Type.Boolean(),
+    titleHidden: Type.Boolean(),
+    bodyHidden: Type.Boolean(),
+    hiddenImageIds: Type.Array(UuidSchema),
+    hiddenFileIds: Type.Array(UuidSchema),
+    hiddenLinkUrls: Type.Array(Type.String()),
+    reason: Type.Union([Type.String(), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type EntryModeration = Static<typeof EntryModerationSchema>;
+export const EntryModerationInputSchema = Type.Object(
+  {
+    target: Type.Union([
+      Type.Literal('entry'),
+      Type.Literal('title'),
+      Type.Literal('body'),
+      Type.Literal('image'),
+      Type.Literal('file'),
+      Type.Literal('link'),
+    ]),
+    targetId: Type.Optional(Type.String({ minLength: 1 })),
+    hidden: Type.Boolean(),
+    reason: Type.String({ minLength: 1, maxLength: 2000 }),
+  },
+  { additionalProperties: false },
+);
+export type EntryModerationInput = Static<typeof EntryModerationInputSchema>;
+
 export const EntrySchema = Type.Object(
   {
     id: EntryIdSchema,
@@ -108,10 +139,31 @@ export const EntrySchema = Type.Object(
     updatedAt: TimestampSchema,
     canEdit: Type.Boolean(),
     canDelete: Type.Boolean(),
+    moderation: Type.Optional(
+      Type.Object(
+        {
+          hidden: Type.Boolean(),
+          titleHidden: Type.Boolean(),
+          bodyHidden: Type.Boolean(),
+          hiddenImageCount: Type.Integer({ minimum: 0 }),
+          hiddenFileCount: Type.Integer({ minimum: 0 }),
+          hiddenLinkCount: Type.Integer({ minimum: 0 }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
 export type Entry = Static<typeof EntrySchema>;
+export const EntryReviewSchema = Type.Object(
+  {
+    entry: EntrySchema,
+    moderation: EntryModerationSchema,
+  },
+  { additionalProperties: false },
+);
+export type EntryReview = Static<typeof EntryReviewSchema>;
 
 const TitleInputSchema = Type.Union([
   Type.String({

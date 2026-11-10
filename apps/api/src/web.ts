@@ -17,6 +17,9 @@ const fixedRoutes = [
   '/settings/profile',
   '/settings/content',
   '/settings/site',
+  '/settings/users',
+  '/settings/permissions',
+  '/settings/audit',
 ];
 const assetExtensions: Record<string, true> = {
   '.js': true,

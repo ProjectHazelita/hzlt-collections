@@ -2,6 +2,7 @@ import { and, eq, ne, sql } from 'drizzle-orm';
 import { fromDrizzle, type PgBoss } from 'pg-boss';
 import { Value } from 'typebox/value';
 import {
+  hasPermission,
   ImageFormatSchema,
   UploadAcceptedSchema,
   UploadStatusSchema,
@@ -11,7 +12,7 @@ import {
   type UploadStatus,
 } from '@hcl/contracts';
 import type { User } from '@hcl/contracts';
-import { visibleEntries } from '../entries/access.js';
+import { canReviewEntry, unhiddenEntries, visibleEntries } from '../entries/access.js';
 import type { Database } from '../index.js';
 import type { LocalStorage } from '../storage/local-storage.js';
 import { assets, entries, entryAttachments, siteSettings, users } from '../db/schema.js';
@@ -103,6 +104,10 @@ export class AssetService {
     const [asset] = await this.db
       .select({
         entryId: entries.id,
+        authorId: entries.authorId,
+        visibility: entries.visibility,
+        moderation: entries.moderation,
+        publiclyUnhidden: sql<boolean>`${unhiddenEntries()}`,
         kind: assets.kind,
         originalKey: assets.originalKey,
         thumbnailKey: assets.thumbnailKey,
@@ -125,6 +130,12 @@ export class AssetService {
       )
       .limit(1);
     if (!asset) throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
+    const reviewer = canReviewEntry(user) &&
+      (asset.visibility === 'public' || asset.visibility === 'registered' || hasPermission(user, 'content.restricted'));
+    const originalAccess = user?.id === asset.authorId || reviewer;
+    const blocked = !asset.publiclyUnhidden ||
+      (asset.kind === 'image' ? asset.moderation.hiddenImageIds : asset.moderation.hiddenFileIds).includes(id);
+    if (blocked && !originalAccess) throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
     if (asset.kind === 'image') {
       if (!asset.thumbnailKey || !Value.Check(ImageFormatSchema, asset.format))
         throw new DomainError(404, 'NOT_FOUND', 'Media not found.');
@@ -134,14 +145,17 @@ export class AssetService {
   }
 
   /** Resolve a ready image that a user has selected as their avatar. */
-  async avatar(id: string) {
+  async avatar(id: string, user: User | null = null) {
     const [asset] = await this.db
       .select({
         thumbnailKey: assets.thumbnailKey,
       })
       .from(assets)
       .innerJoin(users, eq(users.avatarAssetId, assets.id))
-      .where(and(eq(assets.id, id), eq(assets.state, 'ready'), eq(assets.kind, 'image')))
+      .where(and(
+        eq(assets.id, id), eq(assets.state, 'ready'), eq(assets.kind, 'image'),
+        sql`(not (${users.hiddenProfileFields} @> '["avatar"]'::jsonb) or ${users.id} = ${user?.id ?? null} or ${user?.role === 'owner'})`,
+      ))
       .limit(1);
     const thumbnailKey = asset?.thumbnailKey;
     if (!thumbnailKey) throw new DomainError(404, 'NOT_FOUND', 'Avatar not found.');

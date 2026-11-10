@@ -5,10 +5,14 @@ import {
   EntryInputSchema,
   type EntryLink,
   type EntryList,
+  type EntryModerationInput,
+  EntryModerationInputSchema,
   type EntryPatch,
   EntryPatchSchema,
+  type EntryReview,
   EntrySchema,
   type FileAsset,
+  hasPermission,
   type ImageAsset,
   type ImageFormat,
   type LikeResponse,
@@ -37,8 +41,9 @@ import {
 import { DomainError } from '../errors.js';
 import { hashInput, type Transaction, withIdempotency } from '../idempotency.js';
 import type { Database } from '../index.js';
+import { freshUser, requirePermission, writeAudit } from '../staff.js';
 import { publicUserColumns, toPublicUser } from '../users.js';
-import { visibleEntries } from './access.js';
+import { canReviewEntry, publicEntries, visibleEntries } from './access.js';
 
 type Reader = Pick<Database, 'select'>;
 type NormalizedTag = { name: string; normalizedName: string };
@@ -204,14 +209,14 @@ function decode(value: string | undefined, kind: Cursor['kind']): Cursor | undef
   return parsed;
 }
 function publicFilter(q: string, user: User | null): SQL {
-  const visible = visibleEntries(user);
+  const visible = publicEntries(user);
   if (!q) return visible;
   const needle = pattern(q);
   return and(
     visible,
     or(
-      sql`${entries.title} ilike ${needle} escape '\\'`,
-      sql`${entries.body} ilike ${needle} escape '\\'`,
+      sql`(not coalesce((${entries.moderation}->>'titleHidden')::boolean, false) and ${entries.title} ilike ${needle} escape '\\')`,
+      sql`(not coalesce((${entries.moderation}->>'bodyHidden')::boolean, false) and ${entries.body} ilike ${needle} escape '\\')`,
       sql`exists (select 1 from ${entryTags} join ${tags} on ${tags.id} = ${entryTags.tagId}
       where ${entryTags.entryId} = ${entries.id} and ${tags.name} ilike ${needle} escape '\\')`,
     ),
@@ -224,7 +229,12 @@ export class EntryService {
     private readonly boss: PgBoss,
   ) {}
 
-  private async hydrate(db: Reader, ids: bigint[], user: User | null): Promise<Entry[]> {
+  private async hydrate(
+    db: Reader,
+    ids: bigint[],
+    user: User | null,
+    original = false,
+  ): Promise<Entry[]> {
     if (!ids.length) return [];
     const rows = await db
       .select({
@@ -323,23 +333,45 @@ export class EntryService {
       const own = user?.id === entry.authorId;
       const like = likeMap.get(entry.id);
       const bundle = attachmentsMap.get(entry.id) ?? { images: [], files: [], links: [] };
+      const moderation = entry.moderation;
+      const images = bundle.images.filter((item) => !moderation.hiddenImageIds.includes(item.id));
+      const files = bundle.files.filter((item) => !moderation.hiddenFileIds.includes(item.id));
+      const links = bundle.links.filter((item) => !moderation.hiddenLinkUrls.includes(item.url));
+      const hidden =
+        moderation.hidden ||
+        ((!entry.body.trim() || moderation.bodyHidden) &&
+          !images.length &&
+          !files.length &&
+          !links.length);
       result.set(entry.id, {
         id: entry.id.toString(),
         visibility: entry.visibility,
         author: toPublicUser(author),
-        title: entry.title,
-        body: entry.body,
-        tags: tagMap.get(entry.id) ?? [],
+        title: original
+          ? entry.title
+          : hidden || moderation.titleHidden
+            ? '标题已隐藏'
+            : entry.title,
+        body: original ? entry.body : hidden || moderation.bodyHidden ? '' : entry.body,
+        tags: hidden && !original ? [] : (tagMap.get(entry.id) ?? []),
         declarations: { nsfw: entry.nsfw, aiGenerated: entry.aiGenerated },
-        images: bundle.images,
-        files: bundle.files,
-        links: bundle.links,
+        images: original ? bundle.images : hidden ? [] : images,
+        files: original ? bundle.files : hidden ? [] : files,
+        links: original ? bundle.links : hidden ? [] : links,
         likeCount: like?.total ?? 0,
         likedByMe: like?.mine ?? false,
         createdAt: entry.createdAt.toISOString(),
         updatedAt: entry.updatedAt.toISOString(),
         canEdit: own,
         canDelete: own || user?.role === 'owner',
+        moderation: {
+          hidden,
+          titleHidden: moderation.titleHidden,
+          bodyHidden: moderation.bodyHidden,
+          hiddenImageCount: bundle.images.length - images.length,
+          hiddenFileCount: bundle.files.length - files.length,
+          hiddenLinkCount: bundle.links.length - links.length,
+        },
       });
     }
     return ids.flatMap((id) => {
@@ -352,9 +384,21 @@ export class EntryService {
     query: { q?: string; cursor?: string; limit?: number },
     user: User | null,
     authorId?: string,
+    manage = false,
   ): Promise<EntryList> {
     const filter = and(
-      publicFilter(search(query.q), user),
+      manage
+        ? and(
+            visibleEntries(user),
+            hasPermission(user, 'content.restricted')
+              ? undefined
+              : or(
+                  eq(entries.visibility, 'public'),
+                  eq(entries.visibility, 'registered'),
+                  eq(entries.authorId, user!.id),
+                ),
+          )
+        : publicFilter(search(query.q), user),
       authorId ? eq(entries.authorId, authorId) : undefined,
     )!;
     const cursor = decode(query.cursor, 'entries');
@@ -484,7 +528,7 @@ export class EntryService {
   async create(input: EntryInput, user: User, key: string): Promise<Entry> {
     const normalized = normalize(input);
     if (!uuid.test(key)) return invalid('幂等键须为 UUID。');
-    return withIdempotency(
+    const result = await withIdempotency(
       this.db,
       {
         userId: user.id,
@@ -515,6 +559,8 @@ export class EntryService {
         return entry;
       },
     );
+    // Stored idempotency responses must never revive a subsequently hidden original.
+    return this.get(result.id, user);
   }
 
   async update(id: string, input: EntryPatch, user: User): Promise<Entry> {
@@ -599,17 +645,30 @@ export class EntryService {
     });
   }
 
-  async delete(id: string, user: User): Promise<void> {
+  async delete(id: string, user: User, reason?: string): Promise<void> {
     const parsedId = entryId(id);
     await this.db.transaction(async (tx) => {
+      user = await freshUser(tx, user.id);
       const [entry] = await tx
         .select()
         .from(entries)
         .where(and(eq(entries.id, parsedId), visibleEntries(user)))
         .for('update');
       if (!entry) return notFound();
-      if (entry.authorId !== user.id && user.role !== 'owner')
+      if (reason !== undefined) {
+        requirePermission(user, 'content.delete');
+        this.requireRestrictedReview(entry.visibility, entry.authorId, user);
+      }
+      if (reason === undefined && entry.authorId !== user.id && user.role !== 'owner')
         throw new DomainError(403, 'FORBIDDEN', '没有删除该条目的权限。');
+      if (reason !== undefined || entry.authorId !== user.id)
+        await writeAudit(tx, {
+          actorId: user.id,
+          action: 'content.delete',
+          targetType: 'entry',
+          targetId: id,
+          reason: reason ?? 'Owner deleted entry',
+        });
       const now = new Date();
       await tx
         .update(entries)
@@ -642,7 +701,7 @@ export class EntryService {
       const [entry] = await tx
         .select({ id: entries.id })
         .from(entries)
-        .where(and(eq(entries.id, parsedId), visibleEntries(user)))
+        .where(and(eq(entries.id, parsedId), publicEntries(user)))
         .for('update');
       if (!entry) return notFound();
       if (liked)
@@ -660,7 +719,7 @@ export class EntryService {
   async listLikes(query: PaginationQuery, user: User): Promise<EntryList> {
     const cursor = decode(query.cursor, 'likes');
     const limit = limitOf(query.limit);
-    const filter = and(eq(likes.userId, user.id), visibleEntries(user));
+    const filter = and(eq(likes.userId, user.id), publicEntries(user));
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`set transaction isolation level repeatable read`);
       const [total] = await tx
@@ -712,7 +771,7 @@ export class EntryService {
         and(
           q ? sql`${tags.name} ilike ${pattern(q)} escape '\\'` : undefined,
           sql`exists (select 1 from ${entryTags} join ${entries} on ${entries.id} = ${entryTags.entryId}
-        where ${entryTags.tagId} = ${tags.id} and ${visibleEntries(user)})`,
+        where ${entryTags.tagId} = ${tags.id} and ${publicEntries(user)})`,
         ),
       )
       .orderBy(tags.normalizedName)
@@ -720,9 +779,105 @@ export class EntryService {
     return rows.map((row) => row.name);
   }
 
+  private requireRestrictedReview(
+    visibility: Entry['visibility'],
+    authorId: string,
+    user: User,
+  ): void {
+    if (authorId !== user.id && visibility !== 'public' && visibility !== 'registered')
+      requirePermission(user, 'content.restricted');
+  }
+
+  async review(id: string, user: User): Promise<EntryReview> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`set transaction isolation level repeatable read`);
+      const [row] = await tx
+        .select()
+        .from(entries)
+        .where(and(eq(entries.id, entryId(id)), visibleEntries(user)));
+      if (!row) return notFound();
+      if (row.authorId !== user.id) {
+        if (!canReviewEntry(user)) requirePermission(user, 'content.moderate');
+        this.requireRestrictedReview(row.visibility, row.authorId, user);
+      }
+      const [entry] = await this.hydrate(tx, [row.id], user, true);
+      if (!entry) return notFound();
+      return { entry, moderation: row.moderation };
+    });
+  }
+
+  async moderate(id: string, input: EntryModerationInput, user: User): Promise<EntryReview> {
+    if (!Value.Check(EntryModerationInputSchema, input)) return invalid('管理输入无效。');
+    requirePermission(user, 'content.moderate');
+    const reason = input.reason.trim();
+    if (!reason) return invalid('请填写管理原因。');
+    await this.db.transaction(async (tx) => {
+      user = await freshUser(tx, user.id);
+      requirePermission(user, 'content.moderate');
+      const [row] = await tx
+        .select()
+        .from(entries)
+        .where(and(eq(entries.id, entryId(id)), visibleEntries(user)))
+        .for('update');
+      if (!row) return notFound();
+      this.requireRestrictedReview(row.visibility, row.authorId, user);
+      if (row.authorId === user.id && !input.hidden)
+        throw new DomainError(403, 'FORBIDDEN', '不能解除对自己内容的限制。');
+      const moderation = {
+        ...row.moderation,
+        hiddenImageIds: [...row.moderation.hiddenImageIds],
+        hiddenFileIds: [...row.moderation.hiddenFileIds],
+        hiddenLinkUrls: [...row.moderation.hiddenLinkUrls],
+        reason,
+      };
+      if (input.target === 'entry') moderation.hidden = input.hidden;
+      else if (input.target === 'title') moderation.titleHidden = input.hidden;
+      else if (input.target === 'body') moderation.bodyHidden = input.hidden;
+      else {
+        const targetId = input.targetId;
+        if (!targetId) return invalid('请选择需要处理的附件。');
+        const key =
+          input.target === 'image'
+            ? 'hiddenImageIds'
+            : input.target === 'file'
+              ? 'hiddenFileIds'
+              : 'hiddenLinkUrls';
+        const [attachment] = await tx
+          .select()
+          .from(entryAttachments)
+          .where(
+            and(
+              eq(entryAttachments.entryId, row.id),
+              eq(entryAttachments.kind, input.target),
+              input.target === 'link'
+                ? eq(entryAttachments.url, targetId)
+                : uuid.test(targetId)
+                  ? eq(entryAttachments.assetId, targetId)
+                  : sql`false`,
+            ),
+          );
+        if (!attachment && !moderation[key].includes(targetId)) return notFound();
+        moderation[key] = input.hidden
+          ? [...new Set([...moderation[key], targetId])]
+          : moderation[key].filter((value) => value !== targetId);
+      }
+      await tx
+        .update(entries)
+        .set({ moderation, updatedAt: new Date() })
+        .where(eq(entries.id, row.id));
+      await writeAudit(tx, {
+        actorId: user.id,
+        action: `content.${input.hidden ? 'hide' : 'restore'}.${input.target}`,
+        targetType: 'entry',
+        targetId: id,
+        reason,
+      });
+    });
+    return this.review(id, user);
+  }
+
   async listAdmin(query: PaginationQuery, user: User): Promise<EntryList> {
-    if (user.role !== 'owner')
-      throw new DomainError(403, 'FORBIDDEN', '只有站点所有者可以管理全站内容。');
-    return this.list(query, user);
+    if (!canReviewEntry(user)) requirePermission(user, 'content.moderate');
+    return this.list(query, user, undefined, true);
   }
 }

@@ -17,6 +17,7 @@ export { EntryService } from './entries/service.js';
 export { ProfileService } from './profile/service.js';
 export { UserService } from './profile/users.js';
 export { SiteService } from './site/service.js';
+export { freshUser, requirePermission, StaffService, writeAudit } from './staff.js';
 export function createDatabase(connectionString: string) {
   const pool = new pg.Pool({ connectionString });
   return { pool, db: drizzle(pool) };

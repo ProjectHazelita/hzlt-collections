@@ -96,6 +96,10 @@ describe('production web build over real HTTP', () => {
       '/settings',
       '/settings/profile',
       '/settings/content',
+      '/settings/site',
+      '/settings/users',
+      '/settings/permissions',
+      '/settings/audit',
     ]) {
       const response = await request(address, route, 'GET', 'application/json, text/html;q=0.8');
       expect(response.status, route).toBe(200);

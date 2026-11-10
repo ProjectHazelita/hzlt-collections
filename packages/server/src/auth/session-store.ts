@@ -1,5 +1,6 @@
 import { and, eq, gt, ne, sql } from 'drizzle-orm';
-import { sessions } from '../db/schema.js';
+import { sessions, users } from '../db/schema.js';
+import type { Transaction } from '../idempotency.js';
 import type { Database } from '../index.js';
 
 export type SessionPayload = Record<string, unknown>;
@@ -133,16 +134,37 @@ export class PostgresSessionStore {
     return saved.expiresAt.getTime() > Date.now() ? saved.payload : null;
   }
 
+  private async withActiveIdentity<T>(
+    session: SessionPayload,
+    operation: (tx: Transaction) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction(async (tx) => {
+      if (typeof session.userId === 'string') {
+        // The ban path locks the user before deleting sessions. Share its lock/order so
+        // a delayed login or save cannot recreate a session after that deletion.
+        const [user] = await tx
+          .select({ banned: users.banned })
+          .from(users)
+          .where(eq(users.id, session.userId))
+          .for('update');
+        if (!user || user.banned)
+          throw storeError('ENOENT', 'Session identity is no longer active');
+      }
+      return operation(tx);
+    });
+  }
   private async insert(id: string, session: SessionPayload): Promise<void> {
     const saved = snapshot(session);
     if (saved.expiresAt.getTime() <= Date.now()) throw storeError('ENOENT', 'Session has expired');
     // set is solely the first insertion, never an upsert or a refresh of an existing ID.
-    const [created] = await this.db
-      .insert(sessions)
-      .values({ storeId: id, ...saved })
-      .onConflictDoNothing({ target: sessions.storeId })
-      .returning({ storeId: sessions.storeId });
-    if (!created) throw storeError('ENOENT', 'Session already exists');
+    await this.withActiveIdentity(saved.payload, async (tx) => {
+      const [created] = await tx
+        .insert(sessions)
+        .values({ storeId: id, ...saved })
+        .onConflictDoNothing({ target: sessions.storeId })
+        .returning({ storeId: sessions.storeId });
+      if (!created) throw storeError('ENOENT', 'Session already exists');
+    });
   }
 
   private async update(
@@ -153,18 +175,20 @@ export class PostgresSessionStore {
     const saved = snapshot(session);
     if (saved.expiresAt.getTime() <= Date.now()) throw storeError('ENOENT', 'Session has expired');
     // A destroyed, expired or regenerated session cannot be resurrected by a late request.
-    const [updated] = await this.db
-      .update(sessions)
-      .set(saved)
-      .where(
-        and(
-          eq(sessions.storeId, id),
-          eq(sessions.generation, expectedGeneration),
-          gt(sessions.expiresAt, sql`now()`),
-          sql`${saved.expiresAt}::timestamptz > now()`,
-        ),
-      )
-      .returning({ storeId: sessions.storeId });
-    if (!updated) throw storeError('ENOENT', 'Session is missing, expired or has changed');
+    await this.withActiveIdentity(saved.payload, async (tx) => {
+      const [updated] = await tx
+        .update(sessions)
+        .set(saved)
+        .where(
+          and(
+            eq(sessions.storeId, id),
+            eq(sessions.generation, expectedGeneration),
+            gt(sessions.expiresAt, sql`now()`),
+            sql`${saved.expiresAt}::timestamptz > now()`,
+          ),
+        )
+        .returning({ storeId: sessions.storeId });
+      if (!updated) throw storeError('ENOENT', 'Session is missing, expired or has changed');
+    });
   }
 }

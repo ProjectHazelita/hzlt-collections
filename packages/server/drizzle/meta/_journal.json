@@ -36,6 +36,20 @@
       "when": 1794280000000,
       "tag": "0004_site_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794290000000,
+      "tag": "0005_staff_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794290000001,
+      "tag": "0006_content_moderation",
+      "breakpoints": true
     }
   ]
 }
