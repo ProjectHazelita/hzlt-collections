@@ -10,9 +10,10 @@ import { Link, useLocation, useParams } from 'react-router';
 import { ApiError, errorMessage, isCancelled, useAuth } from '../../app/api';
 import { uuid } from '../../app/uuid';
 import { MasonryFeed } from '../../components/MasonryFeed';
+import { UserComments } from './UserComments';
 import './users.css';
 
-type View = 'works' | 'following' | 'followers';
+type View = 'works' | 'following' | 'followers' | 'comments';
 
 export function UserPage() {
   const { username = '' } = useParams<{ username: string }>();
@@ -211,6 +212,13 @@ function UserProfile({ username }: { username: string }) {
         >
           粉丝 · {person.followerCount}
         </button>
+        <button
+          type="button"
+          aria-current={view === 'comments' ? 'page' : undefined}
+          onClick={() => setView('comments')}
+        >
+          评论
+        </button>
       </nav>
       {view === 'works' ? (
         <div className="user-works">
@@ -257,6 +265,8 @@ function UserProfile({ username }: { username: string }) {
             </div>
           )}
         </div>
+      ) : view === 'comments' ? (
+        <UserComments username={username} />
       ) : (view === 'following' ? canViewFollowing : canViewFollowers) ? (
         <UserList key={view} username={username} kind={view} />
       ) : (

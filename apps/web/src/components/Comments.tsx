@@ -1,18 +1,21 @@
 import type { Comment, CommentList } from '@hcl/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { MessageCircle, SendHorizontal, X } from 'lucide-react';
-import { type FormEvent, type ReactNode, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { errorMessage, isCancelled, queryClient, useAuth } from '../app/api';
+import { CommentDeleteButton } from './CommentDeleteButton';
 import { UserAvatar } from './UserAvatar';
 import './gallery-content.css';
 
 function CommentRow({
   comment,
+  entryId,
   fresh,
   onReply,
 }: {
   comment: Comment;
+  entryId: string;
   fresh: boolean;
   onReply: (comment: Comment) => void;
 }) {
@@ -42,6 +45,7 @@ function CommentRow({
               回复
             </button>
           )}
+          <CommentDeleteButton entryId={entryId} comment={comment} />
         </div>
         <p className="comment-body">{comment.body}</p>
       </div>
@@ -59,10 +63,18 @@ export function Comments({ entryId, children }: { entryId: string; children: Rea
   const [freshId, setFreshId] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const result = useQuery({
-    queryKey: ['comments', entryId],
+    queryKey: ['comments', entryId, user?.id ?? 'guest', epoch.current],
     queryFn: ({ signal }) =>
       request<CommentList>(`/api/v1/entries/${entryId}/comments`, { signal }),
   });
+  useEffect(() => {
+    if (!replyTo || !result.data) return;
+    const exists = result.data.items.some(
+      (thread) =>
+        thread.comment.id === replyTo.id || thread.replies.some((item) => item.id === replyTo.id),
+    );
+    if (!exists) setReplyTo(null);
+  }, [replyTo, result.data]);
 
   function reply(comment: Comment) {
     setReplyTo(comment);
@@ -85,8 +97,14 @@ export function Comments({ entryId, children }: { entryId: string; children: Rea
       setBody('');
       setReplyTo(null);
       setFreshId(created.id);
-      await queryClient.invalidateQueries({ queryKey: ['comments', entryId] });
-      window.setTimeout(() => setFreshId(null), 1200);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['comments', entryId] }),
+        queryClient.invalidateQueries({ queryKey: ['user-comments'] }),
+      ]);
+      if (captured !== epoch.current) return;
+      window.setTimeout(() => {
+        if (captured === epoch.current) setFreshId(null);
+      }, 1200);
     } catch (cause) {
       if (captured === epoch.current && !isCancelled(cause)) setError(errorMessage(cause));
     } finally {
@@ -119,6 +137,7 @@ export function Comments({ entryId, children }: { entryId: string; children: Rea
               {result.data.items.map((thread) => (
                 <div className="comment-thread" key={thread.comment.id}>
                   <CommentRow
+                    entryId={entryId}
                     comment={thread.comment}
                     fresh={thread.comment.id === freshId}
                     onReply={reply}
@@ -127,6 +146,7 @@ export function Comments({ entryId, children }: { entryId: string; children: Rea
                     <div className="comment-replies">
                       {thread.replies.map((comment) => (
                         <CommentRow
+                          entryId={entryId}
                           key={comment.id}
                           comment={comment}
                           fresh={comment.id === freshId}

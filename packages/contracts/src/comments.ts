@@ -1,4 +1,5 @@
 import { type Static, Type } from 'typebox';
+import { CursorSchema } from './entries.js';
 import { EntryIdSchema, TimestampSchema, UserSchema } from './primitives.js';
 
 export const MAX_COMMENT_LENGTH = 1000;
@@ -60,3 +61,36 @@ export const EntryCommentsParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 export type EntryCommentsParams = Static<typeof EntryCommentsParamsSchema>;
+
+export const UserCommentSchema = Type.Object(
+  {
+    comment: CommentSchema,
+    entry: Type.Object(
+      { id: EntryIdSchema, title: Type.Union([Type.Null(), Type.String()]) },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+export type UserComment = Static<typeof UserCommentSchema>;
+
+export const UserCommentListSchema = Type.Object(
+  {
+    items: Type.Array(UserCommentSchema),
+    nextCursor: Type.Union([CursorSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type UserCommentList = Static<typeof UserCommentListSchema>;
+
+export const UserCommentsCursorSchema = Type.Object(
+  { kind: Type.Literal('user-comments'), at: TimestampSchema, id: CommentIdSchema },
+  { additionalProperties: false },
+);
+export type UserCommentsCursor = Static<typeof UserCommentsCursorSchema>;
+
+export const EntryCommentParamsSchema = Type.Object(
+  { id: EntryIdSchema, commentId: CommentIdSchema },
+  { additionalProperties: false },
+);
+export type EntryCommentParams = Static<typeof EntryCommentParamsSchema>;
