@@ -16,7 +16,9 @@
     "typecheck:packages": "pnpm -r typecheck",
     "build:packages": "pnpm --filter @hcl/web build && pnpm --filter @hcl/api build && pnpm --filter @hcl/worker build",
     "test:integration:internal": "vitest run --fileParallelism=false",
-    "smoke:api:internal": "tsx scripts/smoke-api.ts"
+    "smoke:api:internal": "tsx scripts/smoke-api.ts",
+    "import:101hub": "tsx scripts/import-101hub.ts",
+    "verify:101hub": "tsx scripts/verify-101hub.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",

@@ -139,6 +139,57 @@ docker compose ps
 docker compose logs --since 10m api worker migrate
 ```
 
+### 从 101 Hub 离线导入
+
+`scripts/import-101hub.ts` 接受 101 Hub schema v4 的一致性备份目录（`hub.sqlite3` 与 `media/`），仅导入到**已经完成结构迁移、但用户／内容表和媒体存储均为空**的实例。不要直接读取运行中的旧站数据目录，不要将备份、密钥或导入清单提交到仓库。
+
+- 保留用户名、昵称、Argon2id 密码哈希、用户创建时间和头像；`--owner` 明确选择一个源站管理员作为唯一 owner，其余账号成为 member。遇到停用账号、用户名规范化冲突或不兼容数据会拒绝导入，不会静默启用账号或改密码。
+- 一条未删除 post 对应一个公开或仅注册用户可见的单图 entry，保留作者、标题、创建／更新时间及现存图片字节；按当前 Worker 规则重新生成缩略图。保留相关标签、评论／回复及喜欢；不导入已删除作品、旧 Session 或打印任务。有效回复指向已删除评论等无法直接映射的情况会拒绝导入。
+- 密码哈希原样复制，但**不会放宽当前登录的 12–128 字符限制**。原密码短于 12 字符的账号需要另外处理；不能从哈希判断密码长度。导入工具也不承诺保留旧站数字 ID 或 URL。
+
+先在独立 Compose 项目中演练，使用新生成的独立数据库密码和 Session secret、空卷、未占用且只绑定回环的端口。导入时只运行该项目的数据库，API／Worker 必须停止；不要先注册 owner。开发工具镜像应已按开发环境说明准备好。
+
+解包旧站的一致性备份到私有工作目录后，关闭所有读取该快照的程序，再将**这个可丢弃的快照副本**改为独立 SQLite 文件。此操作不能指向旧站正在使用的数据库：
+
+```sh
+python3 - "$snapshot/hub.sqlite3" <<'PY'
+import sqlite3
+import sys
+
+db = sqlite3.connect(sys.argv[1])
+try:
+    assert db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+    assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+finally:
+    db.close()
+PY
+```
+
+`snapshot`、`work`、`envfile` 均使用绝对路径；`work` 为权限 `0700` 的私有目录，`envfile` 为权限 `0600` 的独立演练环境文件。以下命令在项目根目录执行；`project` 必须是新演练项目名，`source_owner` 是选定的源站管理员用户名。环境文件需配置独立的 `API_HOST_PORT`、`WEB_PORT`、`DEV_DB_PORT`，以及与浏览器入口一致的 `PUBLIC_ORIGIN`。
+
+```sh
+docker compose -p "$project" --env-file "$envfile" -f compose.dev.yaml up -d --wait db
+docker compose -p "$project" --env-file "$envfile" -f compose.dev.yaml run --rm --no-deps migrate
+docker compose -p "$project" --env-file "$envfile" -f compose.dev.yaml --profile tools \
+  run --rm --no-deps \
+  -v "$snapshot:/migration-source:ro,z" -v "$work:/migration-work:rw,z" \
+  tools pnpm exec tsx scripts/import-101hub.ts \
+  --source /migration-source --manifest /migration-work/import-manifest.json \
+  --expect-database hcl --owner "$source_owner" --visibility public
+
+docker compose -p "$project" --env-file "$envfile" -f compose.dev.yaml up -d --wait api worker web
+docker compose -p "$project" --env-file "$envfile" -f compose.dev.yaml --profile tools \
+  run --rm --no-deps \
+  -v "$snapshot:/migration-source:ro,z" -v "$work:/migration-work:ro,z" \
+  tools pnpm exec tsx scripts/verify-101hub.ts \
+  --source /migration-source --manifest /migration-work/import-manifest.json \
+  --expect-database hcl --owner "$source_owner"
+```
+
+清单以 `0600` 排他创建，记录快照摘要及新旧 ID 对照，不包含密码哈希。校验器逐项比对账号哈希、角色、作者、时间、互动关系、图片 SHA-256 和可解码的缩略图；工具服务的 `API_BASE_URL` 会额外启用真实 HTTP 校验。`public` 导入验证每个条目、原图、缩略图及头像；`registered` 导入仅对健康与头像进行匿名 HTTP 校验，条目仍进行数据库／文件校验。请在演练用户修改数据前完成对照验收。
+
+导入拒绝覆盖或合并已有数据，也不支持向非空目标重复执行。失败时不会擅自删除已发布文件；若 COMMIT 结果不明，保留媒体、锁和清单，先检查数据库，不要盲目重跑。演练可换一个全新的独立项目重来，不要通过清空正在使用的卷来处理。正式切换需暂停旧站写入、重新取最终一致性备份并再次验收；演练后的旧站新增内容不会自动同步。
+
 ### 一致备份与恢复
 
 数据库包含账号、Session、条目和队列；媒体卷包含原图与派生文件。只备份其中一个不能恢复完整站点。备份包含密码哈希、会话和原图元数据，应限制访问并加密保存；另行安全保存 `.env` 中的秘密，不把它放入公开仓库。
